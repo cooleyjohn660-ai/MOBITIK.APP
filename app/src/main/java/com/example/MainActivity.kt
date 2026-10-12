@@ -123,6 +123,7 @@ import com.example.ui.theme.MobitikOrange
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MobitikViewModel
 import com.example.ui.viewmodel.ProfileGateState
+import com.google.android.gms.ads.MobileAds
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -146,6 +147,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        try {
+            MobileAds.initialize(this) {}
+        } catch (_: Exception) {
+        }
         setContent {
             MobitikRootApp()
         }
@@ -309,11 +314,13 @@ fun MobitikAuthenticatedScaffold(
     var profileInitialSection by rememberSaveable { mutableIntStateOf(0) }
     var showNotificationsSheet by rememberSaveable { mutableStateOf(false) }
     var showTermsOfServiceDialog by rememberSaveable { mutableStateOf(false) }
-    var showAdminConsole by rememberSaveable { mutableStateOf(viewModel.isAdminUser) }
-    var adminAutoOpened by rememberSaveable { mutableStateOf(false) }
+    var showAdminConsole by rememberSaveable(viewModel.currentUserId) { mutableStateOf(false) }
+    var adminAutoOpened by rememberSaveable(viewModel.currentUserId) { mutableStateOf(false) }
 
-    LaunchedEffect(viewModel.isAdminUser) {
-        if (viewModel.isAdminUser && !adminAutoOpened) {
+    LaunchedEffect(viewModel.isAdminUser, viewModel.currentUserId) {
+        if (!viewModel.isAdminUser) {
+            showAdminConsole = false
+        } else if (!adminAutoOpened) {
             adminAutoOpened = true
             viewModel.startAdminObservers()
             showAdminConsole = true
@@ -747,6 +754,7 @@ fun MobitikAuthenticatedScaffold(
                                             isBusy = isBusy,
                                             onStartMining = { viewModel.onStartMiningClicked() },
                                             onClaimReward = { viewModel.onClaimMiningRewardClicked() },
+                                            onRewardedAdBoost = { viewModel.onRewardedAdBoostClaimed() },
                                             onOpenNotifications = { showNotificationsSheet = true },
                                             onNavigateToWalletTab = { subTab ->
                                                 walletInitialTab = subTab

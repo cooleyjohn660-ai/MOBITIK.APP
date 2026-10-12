@@ -499,34 +499,6 @@ fun MobitikSignInScreen(
                             fontWeight = FontWeight.Bold
                         )
                     }
-
-                    // 1-Tap Admin Auto-Login Button for Owner (cooleyjohn660@gmail.com)
-                    TextButton(
-                        onClick = {
-                            onEmailSessionAuth(
-                                MobitikRepository.ADMIN_EMAIL,
-                                "MOBITIK Admin",
-                                "mobitik_admin"
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("admin_auto_login_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AdminPanelSettings,
-                            contentDescription = null,
-                            tint = MobitikGold,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Admin Auto-Login (${MobitikRepository.ADMIN_EMAIL})",
-                            color = MobitikGold,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                 }
             }
         }

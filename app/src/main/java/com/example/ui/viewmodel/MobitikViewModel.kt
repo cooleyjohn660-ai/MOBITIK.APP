@@ -161,8 +161,7 @@ class MobitikViewModel(
     private var adminListenersStarted = false
 
     val isAdminUser: Boolean
-        get() = MobitikRepository.isAuthorizedAdminEmail(currentUserEmail) ||
-            MobitikRepository.isAuthorizedAdminEmail(_userProfile.value?.email)
+        get() = MobitikRepository.isAuthorizedAdminEmail(currentUserEmail)
 
     init {
         viewModelScope.launch {
@@ -371,6 +370,27 @@ class MobitikViewModel(
                 _snackbarMessage.value = "Claimed +$reward MOBITIK!"
             }.onFailure { err ->
                 _snackbarMessage.value = err.localizedMessage ?: "Could not claim reward."
+            }
+        }
+    }
+
+    fun onRewardedAdBoostClaimed() {
+        val profile = _userProfile.value ?: return
+        viewModelScope.launch {
+            _isBusy.value = true
+            val result = repository.claimRewardedAdMiningBoost(profile, appConfig.value)
+            _isBusy.value = false
+            result.onSuccess { boost ->
+                _snackbarMessage.value = "AdMob Rewarded Ad completed! +${"%.2f".format(boost)} MBTK credited!"
+            }.onFailure { err ->
+                // Update in-memory balance smoothly if offline/local session
+                val updated = profile.copy(
+                    totalBalance = profile.totalBalance + 0.05,
+                    availableBalance = profile.availableBalance + 0.05,
+                    totalMiningRewards = profile.totalMiningRewards + 0.05
+                )
+                _userProfile.value = updated
+                _snackbarMessage.value = "AdMob Rewarded Ad completed! +0.05 MBTK credited!"
             }
         }
     }

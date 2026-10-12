@@ -710,6 +710,57 @@ class MobitikRepository(
         }
     }
 
+    suspend fun claimRewardedAdMiningBoost(
+        user: UserProfile,
+        config: AppConfig
+    ): Result<Double> {
+        val uid = requireUserId()
+        val userDocPath = "users/$uid"
+        return try {
+            require(config.miningEnabled) { "Mining is temporarily paused by administrator." }
+            require(user.accountStatus == "ACTIVE") { "Account is suspended. Contact support." }
+
+            val boostReward = 0.05
+            val newTotalBalance = user.totalBalance + boostReward
+            val newAvailableBalance = user.availableBalance + boostReward
+            val newTotalMiningRewards = user.totalMiningRewards + boostReward
+
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "totalBalance" to newTotalBalance,
+                    "availableBalance" to newAvailableBalance,
+                    "totalMiningRewards" to newTotalMiningRewards,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+
+            val txId = "tx_adboost_${uid}_${UUID.randomUUID().toString().take(8)}"
+            val tx = WalletTransaction(
+                id = txId,
+                userId = uid,
+                counterpartyUserId = "",
+                type = "MINING_REWARD",
+                senderAddress = "MOBITIK-AD-REWARD-POOL",
+                recipientAddress = user.walletAddress,
+                amount = boostReward,
+                fee = 0.0,
+                tokenSymbol = "MOBITIK",
+                note = "Rewarded Ad Mining Boost (AdMob)",
+                status = "COMPLETED",
+                txHash = generateTxHash("ADBOOST"),
+                sessionNumber = user.completedSessions
+            )
+            db.collection("transactions").document(txId).set(tx.toCreateMap()).await()
+
+            Result.success(boostReward)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, userDocPath)
+            Result.failure(e)
+        }
+    }
+
     suspend fun claimEligibleReferralRewards(
         user: UserProfile,
         referrals: List<ReferralRecord>,
