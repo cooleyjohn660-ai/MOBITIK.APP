@@ -1,0 +1,603 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        ('email' in request.auth.token &&
+         'email_verified' in request.auth.token &&
+         request.auth.token.email == 'cooleyjohn660@gmail.com' &&
+         request.auth.token.email_verified == true)
+      );
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+               'userId', 'name', 'username', 'email', 'walletAddress',
+               'externalWalletAddress', 'externalWalletNetwork', 'referralCode',
+               'referredByCode', 'referredByUserId', 'totalBalance', 'availableBalance',
+               'usdtBalance', 'pendingUsdtWithdrawal', 'pendingRewards', 'lockedBalance',
+               'totalMiningRewards', 'completedSessions', 'totalReferrals', 'activeReferrals',
+               'referralRewards', 'autoStartMining', 'twoFactorEnabled', 'pinHash',
+               'accountStatus', 'role', 'notificationsEnabled', 'themeMode', 'language',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'name', 'username', 'email', 'walletAddress',
+               'externalWalletAddress', 'externalWalletNetwork', 'referralCode',
+               'referredByCode', 'referredByUserId', 'totalBalance', 'availableBalance',
+               'usdtBalance', 'pendingUsdtWithdrawal', 'pendingRewards', 'lockedBalance',
+               'totalMiningRewards', 'completedSessions', 'totalReferrals', 'activeReferrals',
+               'referralRewards', 'autoStartMining', 'twoFactorEnabled', 'pinHash',
+               'accountStatus', 'role', 'notificationsEnabled', 'themeMode', 'language',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.username is string && data.username.size() >= 3 && data.username.size() <= 40 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+             data.walletAddress is string && data.walletAddress.size() >= 10 && data.walletAddress.size() <= 80 &&
+             data.externalWalletAddress is string && data.externalWalletAddress.size() <= 80 &&
+             data.externalWalletNetwork is string && data.externalWalletNetwork.size() <= 60 &&
+             data.referralCode is string && data.referralCode.size() >= 4 && data.referralCode.size() <= 32 &&
+             data.referredByCode is string && data.referredByCode.size() <= 32 &&
+             data.referredByUserId is string && data.referredByUserId.size() <= 128 &&
+             data.totalBalance is number && data.totalBalance >= 0 &&
+             data.availableBalance is number && data.availableBalance >= 0 &&
+             data.usdtBalance is number && data.usdtBalance >= 0 &&
+             data.pendingUsdtWithdrawal is number && data.pendingUsdtWithdrawal >= 0 &&
+             data.pendingRewards is number && data.pendingRewards >= 0 &&
+             data.lockedBalance is number && data.lockedBalance >= 0 &&
+             data.totalMiningRewards is number && data.totalMiningRewards >= 0 &&
+             data.completedSessions is int && data.completedSessions >= 0 &&
+             data.totalReferrals is int && data.totalReferrals >= 0 &&
+             data.activeReferrals is int && data.activeReferrals >= 0 &&
+             data.referralRewards is number && data.referralRewards >= 0 &&
+             data.autoStartMining is bool &&
+             data.twoFactorEnabled is bool &&
+             data.pinHash is string && data.pinHash.size() <= 128 &&
+             data.accountStatus in ['ACTIVE', 'SUSPENDED'] &&
+             data.role in ['USER', 'ADMIN'] &&
+             data.notificationsEnabled is bool &&
+             data.themeMode in ['DARK', 'LIGHT', 'SYSTEM'] &&
+             data.language is string && data.language.size() >= 2 && data.language.size() <= 20 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPublicProfile(data) {
+      return data.keys().hasAll([
+               'userId', 'username', 'displayName', 'walletAddress', 'referralCode',
+               'totalReferrals', 'activeReferrals', 'completedSessions', 'accountStatus',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'username', 'displayName', 'walletAddress', 'referralCode',
+               'totalReferrals', 'activeReferrals', 'completedSessions', 'accountStatus',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.username is string && data.username.size() >= 3 && data.username.size() <= 40 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.walletAddress is string && data.walletAddress.size() >= 10 && data.walletAddress.size() <= 80 &&
+             data.referralCode is string && data.referralCode.size() >= 4 && data.referralCode.size() <= 32 &&
+             data.totalReferrals is int && data.totalReferrals >= 0 &&
+             data.activeReferrals is int && data.activeReferrals >= 0 &&
+             data.completedSessions is int && data.completedSessions >= 0 &&
+             data.accountStatus in ['ACTIVE', 'SUSPENDED'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMiningSession(data) {
+      return data.keys().hasAll([
+               'userId', 'sessionNumber', 'startTimeMs', 'endTimeMs', 'durationHours',
+               'rewardAmount', 'status', 'claimed', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'sessionNumber', 'startTimeMs', 'endTimeMs', 'durationHours',
+               'rewardAmount', 'status', 'claimed', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.sessionNumber is int && data.sessionNumber >= 1 &&
+             data.startTimeMs is int && data.startTimeMs > 0 &&
+             data.endTimeMs is int && data.endTimeMs > data.startTimeMs &&
+             data.durationHours is int && data.durationHours >= 1 && data.durationHours <= 168 &&
+             data.rewardAmount is number && data.rewardAmount >= 0 && data.rewardAmount <= 10000 &&
+             data.status in ['ACTIVE', 'COMPLETED', 'CLAIMED', 'EXPIRED'] &&
+             data.claimed is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidWalletTransaction(data) {
+      return data.keys().hasAll([
+               'userId', 'counterpartyUserId', 'type', 'senderAddress', 'recipientAddress',
+               'amount', 'fee', 'tokenSymbol', 'swapToToken', 'swapReceivedAmount',
+               'note', 'status', 'txHash', 'sessionNumber', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'counterpartyUserId', 'type', 'senderAddress', 'recipientAddress',
+               'amount', 'fee', 'tokenSymbol', 'swapToToken', 'swapReceivedAmount',
+               'note', 'status', 'txHash', 'sessionNumber', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.counterpartyUserId is string && data.counterpartyUserId.size() <= 128 &&
+             data.type in ['MINING_REWARD', 'REFERRAL_REWARD', 'TRANSFER_OUT', 'TRANSFER_IN', 'SWAP', 'WITHDRAWAL', 'ADMIN_ADJUSTMENT'] &&
+             data.senderAddress is string && data.senderAddress.size() >= 1 && data.senderAddress.size() <= 80 &&
+             data.recipientAddress is string && data.recipientAddress.size() >= 1 && data.recipientAddress.size() <= 80 &&
+             data.amount is number && data.amount > 0 && data.amount <= 1000000000 &&
+             data.fee is number && data.fee >= 0 && data.fee <= 100000 &&
+             data.tokenSymbol is string && data.tokenSymbol.size() >= 2 && data.tokenSymbol.size() <= 16 &&
+             data.swapToToken is string && data.swapToToken.size() <= 16 &&
+             data.swapReceivedAmount is number && data.swapReceivedAmount >= 0 &&
+             data.note is string && data.note.size() <= 200 &&
+             data.status in ['PENDING', 'COMPLETED', 'CONFIRMED', 'FAILED', 'CANCELLED', 'REVERSED'] &&
+             data.txHash is string && data.txHash.size() >= 6 && data.txHash.size() <= 100 &&
+             data.sessionNumber is int && data.sessionNumber >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUsdtWithdrawal(data) {
+      return data.keys().hasAll([
+               'userId', 'username', 'destinationAddress', 'network', 'amountUsdt',
+               'networkFeeUsdt', 'platformFeeUsdt', 'finalAmountUsdt', 'status',
+               'txHash', 'adminNote', 'idempotencyKey', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'username', 'destinationAddress', 'network', 'amountUsdt',
+               'networkFeeUsdt', 'platformFeeUsdt', 'finalAmountUsdt', 'status',
+               'txHash', 'adminNote', 'idempotencyKey', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.username is string && data.username.size() >= 1 && data.username.size() <= 40 &&
+             data.destinationAddress is string && data.destinationAddress.size() >= 20 && data.destinationAddress.size() <= 80 &&
+             data.network is string && data.network.size() >= 3 && data.network.size() <= 60 &&
+             data.amountUsdt is number && data.amountUsdt > 0 && data.amountUsdt <= 1000000 &&
+             data.networkFeeUsdt is number && data.networkFeeUsdt >= 0 && data.networkFeeUsdt <= 1000 &&
+             data.platformFeeUsdt is number && data.platformFeeUsdt >= 0 && data.platformFeeUsdt <= 1000 &&
+             data.finalAmountUsdt is number && data.finalAmountUsdt > 0 && data.finalAmountUsdt <= data.amountUsdt &&
+             data.status in ['PENDING', 'APPROVED', 'CONFIRMED', 'REJECTED', 'FAILED', 'CANCELLED'] &&
+             data.txHash is string && data.txHash.size() <= 100 &&
+             data.adminNote is string && data.adminNote.size() <= 500 &&
+             data.idempotencyKey is string && data.idempotencyKey.size() >= 6 && data.idempotencyKey.size() <= 100 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidReferralRecord(data) {
+      return data.keys().hasAll([
+               'referrerUserId', 'referredUserId', 'referredUsername', 'referralCode',
+               'status', 'rewardAmount', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'referrerUserId', 'referredUserId', 'referredUsername', 'referralCode',
+               'status', 'rewardAmount', 'createdAt', 'updatedAt'
+             ]) &&
+             data.referrerUserId is string && data.referrerUserId.size() >= 1 && data.referrerUserId.size() <= 128 &&
+             data.referredUserId is string && data.referredUserId.size() >= 1 && data.referredUserId.size() <= 128 &&
+             data.referredUsername is string && data.referredUsername.size() >= 3 && data.referredUsername.size() <= 40 &&
+             data.referralCode is string && data.referralCode.size() >= 4 && data.referralCode.size() <= 32 &&
+             data.status in ['REGISTERED', 'ELIGIBLE', 'REWARDED', 'FLAGGED'] &&
+             data.rewardAmount is number && data.rewardAmount >= 0 && data.rewardAmount <= 10000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAppNotification(data) {
+      return data.keys().hasAll([
+               'userId', 'senderUid', 'title', 'message', 'category', 'isRead', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'senderUid', 'title', 'message', 'category', 'isRead', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.message is string && data.message.size() >= 1 && data.message.size() <= 600 &&
+             data.category in ['MINING', 'REFERRAL', 'WALLET', 'SWAP', 'WITHDRAWAL', 'SECURITY', 'ANNOUNCEMENT'] &&
+             data.isRead is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSupportTicket(data) {
+      return data.keys().hasAll([
+               'userId', 'name', 'email', 'subject', 'message', 'status', 'adminReply', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'name', 'email', 'subject', 'message', 'status', 'adminReply', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+             data.subject is string && data.subject.size() >= 3 && data.subject.size() <= 150 &&
+             data.message is string && data.message.size() >= 5 && data.message.size() <= 2000 &&
+             data.status in ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] &&
+             data.adminReply is string && data.adminReply.size() <= 2000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAppConfig(data) {
+      return data.keys().hasAll([
+               'configKey', 'miningDurationHours', 'miningReward', 'miningEnabled',
+               'referralReward', 'referralEligibilitySessions', 'sendEnabled', 'receiveEnabled',
+               'swapEnabled', 'swapRateUsdt', 'swapFeePercent', 'liquidityPoolUsdt',
+               'withdrawalsEnabled', 'minWithdrawalUsdt', 'maxWithdrawalUsdt',
+               'withdrawalNetworkFeeUsdt', 'withdrawalPlatformFeeUsdt',
+               'bscUsdtContractAddress', 'bscMbtkContractAddress', 'networkFeeMobitik',
+               'supportEmail', 'maintenanceMode', 'announcementText', 'whitepaperSummary',
+               'updatedByUid', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'configKey', 'miningDurationHours', 'miningReward', 'miningEnabled',
+               'referralReward', 'referralEligibilitySessions', 'sendEnabled', 'receiveEnabled',
+               'swapEnabled', 'swapRateUsdt', 'swapFeePercent', 'liquidityPoolUsdt',
+               'withdrawalsEnabled', 'minWithdrawalUsdt', 'maxWithdrawalUsdt',
+               'withdrawalNetworkFeeUsdt', 'withdrawalPlatformFeeUsdt',
+               'bscUsdtContractAddress', 'bscMbtkContractAddress', 'networkFeeMobitik',
+               'supportEmail', 'maintenanceMode', 'announcementText', 'whitepaperSummary',
+               'updatedByUid', 'createdAt', 'updatedAt'
+             ]) &&
+             data.configKey == 'global' &&
+             data.miningDurationHours is int && data.miningDurationHours >= 1 && data.miningDurationHours <= 168 &&
+             data.miningReward is number && data.miningReward >= 0 && data.miningReward <= 10000 &&
+             data.miningEnabled is bool &&
+             data.referralReward is number && data.referralReward >= 0 && data.referralReward <= 10000 &&
+             data.referralEligibilitySessions is int && data.referralEligibilitySessions >= 0 && data.referralEligibilitySessions <= 100 &&
+             data.sendEnabled is bool &&
+             data.receiveEnabled is bool &&
+             data.swapEnabled is bool &&
+             data.swapRateUsdt is number && data.swapRateUsdt >= 0 &&
+             data.swapFeePercent is number && data.swapFeePercent >= 0 && data.swapFeePercent <= 50 &&
+             data.liquidityPoolUsdt is number && data.liquidityPoolUsdt >= 0 &&
+             data.withdrawalsEnabled is bool &&
+             data.minWithdrawalUsdt is number && data.minWithdrawalUsdt >= 0 &&
+             data.maxWithdrawalUsdt is number && data.maxWithdrawalUsdt >= data.minWithdrawalUsdt &&
+             data.withdrawalNetworkFeeUsdt is number && data.withdrawalNetworkFeeUsdt >= 0 &&
+             data.withdrawalPlatformFeeUsdt is number && data.withdrawalPlatformFeeUsdt >= 0 &&
+             data.bscUsdtContractAddress is string && data.bscUsdtContractAddress.size() <= 80 &&
+             data.bscMbtkContractAddress is string && data.bscMbtkContractAddress.size() <= 80 &&
+             data.networkFeeMobitik is number && data.networkFeeMobitik >= 0 && data.networkFeeMobitik <= 1000 &&
+             data.supportEmail is string && data.supportEmail.size() <= 150 &&
+             data.maintenanceMode is bool &&
+             data.announcementText is string && data.announcementText.size() <= 500 &&
+             data.whitepaperSummary is string && data.whitepaperSummary.size() <= 4000 &&
+             data.updatedByUid is string && data.updatedByUid.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidFaqEntry(data) {
+      return data.keys().hasAll([
+               'question', 'answer', 'category', 'sortOrder', 'isPublished', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'question', 'answer', 'category', 'sortOrder', 'isPublished', 'createdAt', 'updatedAt'
+             ]) &&
+             data.question is string && data.question.size() >= 3 && data.question.size() <= 300 &&
+             data.answer is string && data.answer.size() >= 3 && data.answer.size() <= 3000 &&
+             data.category is string && data.category.size() >= 2 && data.category.size() <= 60 &&
+             data.sortOrder is int && data.sortOrder >= 0 &&
+             data.isPublished is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll([
+               'adminUid', 'adminEmail', 'actionType', 'targetId', 'details', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'adminUid', 'adminEmail', 'actionType', 'targetId', 'details', 'createdAt'
+             ]) &&
+             data.adminUid is string && data.adminUid.size() >= 1 && data.adminUid.size() <= 128 &&
+             data.adminEmail is string && data.adminEmail.size() >= 3 && data.adminEmail.size() <= 150 &&
+             data.actionType is string && data.actionType.size() >= 2 && data.actionType.size() <= 80 &&
+             data.targetId is string && data.targetId.size() <= 128 &&
+             data.details is string && data.details.size() >= 2 && data.details.size() <= 1000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // 4. Collection Rules
+
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(adminId);
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       isValidUserProfile(incoming()) &&
+                       (incoming().role == 'USER' || isAdmin());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().walletAddress == existing().walletAddress &&
+                       incoming().referralCode == existing().referralCode &&
+                       incoming().createdAt == existing().createdAt && (
+                         (request.auth.uid == userId &&
+                          incoming().role == existing().role &&
+                          incoming().accountStatus == existing().accountStatus &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'name', 'username', 'externalWalletAddress', 'externalWalletNetwork',
+                            'referredByCode', 'referredByUserId', 'totalBalance', 'availableBalance',
+                            'usdtBalance', 'pendingUsdtWithdrawal', 'pendingRewards', 'lockedBalance',
+                            'totalMiningRewards', 'completedSessions', 'totalReferrals',
+                            'activeReferrals', 'referralRewards', 'autoStartMining',
+                            'twoFactorEnabled', 'pinHash', 'notificationsEnabled',
+                            'themeMode', 'language', 'updatedAt'
+                          ])) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+    }
+
+    match /public_profiles/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (existing().accountStatus == 'ACTIVE' || existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().accountStatus == 'ACTIVE' || existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       isValidPublicProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidPublicProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().walletAddress == existing().walletAddress &&
+                       incoming().referralCode == existing().referralCode &&
+                       incoming().createdAt == existing().createdAt && (
+                         (request.auth.uid == userId &&
+                          incoming().accountStatus == existing().accountStatus &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'username', 'displayName', 'totalReferrals', 'activeReferrals',
+                            'completedSessions', 'updatedAt'
+                          ])) ||
+                         (incoming().accountStatus == existing().accountStatus &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'totalReferrals', 'activeReferrals', 'updatedAt'
+                          ]) &&
+                          incoming().totalReferrals >= existing().totalReferrals) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+    }
+
+    match /mining_sessions/{sessionId} {
+      allow get: if isSignedIn() && isValidId(sessionId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(sessionId) &&
+                       incoming().userId == request.auth.uid &&
+                       isValidMiningSession(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(sessionId) &&
+                       isValidMiningSession(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().sessionNumber == existing().sessionNumber &&
+                       incoming().startTimeMs == existing().startTimeMs &&
+                       incoming().endTimeMs == existing().endTimeMs &&
+                       incoming().createdAt == existing().createdAt && (
+                         (existing().userId == request.auth.uid &&
+                          existing().status != 'CLAIMED' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'claimed', 'updatedAt'])) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isAdmin() && isValidId(sessionId);
+    }
+
+    match /transactions/{txId} {
+      allow get: if isSignedIn() && isValidId(txId) && (existing().userId == request.auth.uid || existing().counterpartyUserId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || existing().counterpartyUserId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(txId) &&
+                       isValidWalletTransaction(incoming()) &&
+                       (incoming().userId == request.auth.uid || isAdmin());
+
+      allow update: if isSignedIn() &&
+                       isValidId(txId) &&
+                       isValidWalletTransaction(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isAdmin();
+
+      allow delete: if false;
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow get: if isSignedIn() && isValidId(withdrawalId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(withdrawalId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       isValidUsdtWithdrawal(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(withdrawalId) &&
+                       isValidUsdtWithdrawal(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().destinationAddress == existing().destinationAddress &&
+                       incoming().amountUsdt == existing().amountUsdt &&
+                       incoming().idempotencyKey == existing().idempotencyKey &&
+                       incoming().createdAt == existing().createdAt && (
+                         (existing().userId == request.auth.uid &&
+                          existing().status == 'PENDING' &&
+                          incoming().status == 'CANCELLED' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+                         isAdmin()
+                       );
+
+      allow delete: if false;
+    }
+
+    match /referrals/{referralId} {
+      allow get: if isSignedIn() && isValidId(referralId) && (existing().referrerUserId == request.auth.uid || existing().referredUserId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().referrerUserId == request.auth.uid || existing().referredUserId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(referralId) &&
+                       isValidReferralRecord(incoming()) &&
+                       incoming().referredUserId == request.auth.uid &&
+                       incoming().referrerUserId != request.auth.uid;
+
+      allow update: if isSignedIn() &&
+                       isValidId(referralId) &&
+                       isValidReferralRecord(incoming()) &&
+                       incoming().referrerUserId == existing().referrerUserId &&
+                       incoming().referredUserId == existing().referredUserId &&
+                       incoming().referralCode == existing().referralCode &&
+                       incoming().createdAt == existing().createdAt && (
+                         ((existing().referrerUserId == request.auth.uid || existing().referredUserId == request.auth.uid) &&
+                          existing().status != 'REWARDED' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'rewardAmount', 'updatedAt'])) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isAdmin() && isValidId(referralId);
+    }
+
+    match /notifications/{notifId} {
+      allow get: if isSignedIn() && isValidId(notifId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(notifId) &&
+                       isValidAppNotification(incoming()) &&
+                       (incoming().senderUid == request.auth.uid || isAdmin());
+
+      allow update: if isSignedIn() &&
+                       isValidId(notifId) &&
+                       isValidAppNotification(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().senderUid == existing().senderUid &&
+                       incoming().createdAt == existing().createdAt && (
+                         (existing().userId == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['isRead', 'updatedAt'])) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isSignedIn() && isValidId(notifId) && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /support_tickets/{ticketId} {
+      allow get: if isSignedIn() && isValidId(ticketId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(ticketId) &&
+                       incoming().userId == request.auth.uid &&
+                       isValidSupportTicket(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(ticketId) &&
+                       isValidSupportTicket(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         (existing().userId == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['message', 'status', 'updatedAt'])) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isAdmin() && isValidId(ticketId);
+    }
+
+    match /app_config/{configId} {
+      allow get: if isSignedIn() && isValidId(configId);
+      allow list: if isSignedIn() && existing().configKey == 'global';
+
+      allow create: if isSignedIn() &&
+                       isValidId(configId) &&
+                       configId == 'global' &&
+                       isValidAppConfig(incoming()) &&
+                       (!exists(/databases/$(database)/documents/app_config/global) || isAdmin());
+
+      allow update: if isSignedIn() &&
+                       isValidId(configId) &&
+                       isValidAppConfig(incoming()) &&
+                       incoming().createdAt == existing().createdAt && (
+                         // Authorized liquidity deduction during an active swap or admin update
+                         (existing().swapEnabled == true &&
+                          incoming().liquidityPoolUsdt <= existing().liquidityPoolUsdt &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['liquidityPoolUsdt', 'updatedAt'])) ||
+                         isAdmin()
+                       );
+
+      allow delete: if false;
+    }
+
+    match /faq_entries/{faqId} {
+      allow get: if isSignedIn() && isValidId(faqId) && (existing().isPublished == true || isAdmin());
+      allow list: if isSignedIn() && (existing().isPublished == true || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(faqId) &&
+                       isValidFaqEntry(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(faqId) &&
+                       isValidFaqEntry(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       isAdmin();
+
+      allow delete: if isSignedIn() && isValidId(faqId) && isAdmin();
+    }
+
+    match /audit_logs/{logId} {
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin() &&
+                       isValidId(logId) &&
+                       incoming().adminUid == request.auth.uid &&
+                       isValidAuditLog(incoming());
+
+      allow update, delete: if false;
+    }
+  }
+}

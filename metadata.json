@@ -1,0 +1,6 @@
+{
+  "name": "MOBITIK",
+  "description": "Mobile-first 12-hour mining reward platform with digital wallet, referral rewards, token swaps, and admin management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

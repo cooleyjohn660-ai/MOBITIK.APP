@@ -1,0 +1,328 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile, MBTK and USDT balances, Web3 wallet connection, security settings, and mining stats.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the user." },
+        "name": { "type": "string", "description": "Full display name." },
+        "username": { "type": "string", "description": "Unique handle." },
+        "email": { "type": "string", "description": "User email address (PII)." },
+        "walletAddress": { "type": "string", "description": "Unique MOBITIK internal ledger address." },
+        "externalWalletAddress": { "type": "string", "description": "Connected external Web3 wallet address (e.g. Trust Wallet BEP-20)." },
+        "externalWalletNetwork": { "type": "string", "description": "Connected external Web3 network name (e.g. BNB Smart Chain)." },
+        "referralCode": { "type": "string", "description": "Unique referral invitation code." },
+        "referredByCode": { "type": "string", "description": "Referral code used during registration." },
+        "referredByUserId": { "type": "string", "description": "UID of the referring user." },
+        "totalBalance": { "type": "number", "description": "Total MOBITIK (MBTK) balance." },
+        "availableBalance": { "type": "number", "description": "Available MOBITIK (MBTK) balance for transfers and swaps." },
+        "usdtBalance": { "type": "number", "description": "Available verified USDT balance." },
+        "pendingUsdtWithdrawal": { "type": "number", "description": "USDT reserved in pending withdrawal requests." },
+        "pendingRewards": { "type": "number", "description": "Unclaimed or pending MOBITIK rewards." },
+        "lockedBalance": { "type": "number", "description": "Locked or reserved MOBITIK balance." },
+        "totalMiningRewards": { "type": "number", "description": "Cumulative MOBITIK earned from mining sessions." },
+        "completedSessions": { "type": "integer", "description": "Total completed 12-hour mining sessions." },
+        "totalReferrals": { "type": "integer", "description": "Total invited users who registered." },
+        "activeReferrals": { "type": "integer", "description": "Total eligible active referrals." },
+        "referralRewards": { "type": "number", "description": "Cumulative MOBITIK earned from referrals." },
+        "autoStartMining": { "type": "boolean", "description": "Whether next session auto-starts upon claim." },
+        "twoFactorEnabled": { "type": "boolean", "description": "Whether transaction PIN / 2FA is enabled." },
+        "pinHash": { "type": "string", "description": "SHA-256 hash of user transaction PIN." },
+        "accountStatus": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"], "description": "Account status." },
+        "role": { "type": "string", "enum": ["USER", "ADMIN"], "description": "Role-based access tier." },
+        "notificationsEnabled": { "type": "boolean", "description": "In-app notification preference." },
+        "themeMode": { "type": "string", "enum": ["DARK", "LIGHT", "SYSTEM"], "description": "UI theme preference." },
+        "language": { "type": "string", "description": "Preferred language code." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update." }
+      },
+      "required": [
+        "userId", "name", "username", "email", "walletAddress", "externalWalletAddress",
+        "externalWalletNetwork", "referralCode", "referredByCode", "referredByUserId",
+        "totalBalance", "availableBalance", "usdtBalance", "pendingUsdtWithdrawal",
+        "pendingRewards", "lockedBalance", "totalMiningRewards", "completedSessions",
+        "totalReferrals", "activeReferrals", "referralRewards", "autoStartMining",
+        "twoFactorEnabled", "pinHash", "accountStatus", "role",
+        "notificationsEnabled", "themeMode", "language", "createdAt", "updatedAt"
+      ]
+    },
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Public non-PII directory entry for wallet address lookup, referral code lookup, and leaderboard.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID." },
+        "username": { "type": "string", "description": "Public username." },
+        "displayName": { "type": "string", "description": "Public display name." },
+        "walletAddress": { "type": "string", "description": "Unique MOBITIK wallet address." },
+        "referralCode": { "type": "string", "description": "Unique referral code." },
+        "totalReferrals": { "type": "integer", "description": "Total referrals count for leaderboard." },
+        "activeReferrals": { "type": "integer", "description": "Active referrals count." },
+        "completedSessions": { "type": "integer", "description": "Completed mining sessions." },
+        "accountStatus": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"], "description": "Account status." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": [
+        "userId", "username", "displayName", "walletAddress", "referralCode",
+        "totalReferrals", "activeReferrals", "completedSessions", "accountStatus",
+        "createdAt", "updatedAt"
+      ]
+    },
+    "MiningSession": {
+      "title": "MiningSession",
+      "description": "12-hour server-tracked mining session record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the mining user." },
+        "sessionNumber": { "type": "integer", "description": "Sequential session number for the user." },
+        "startTimeMs": { "type": "integer", "description": "Session start epoch time in milliseconds." },
+        "endTimeMs": { "type": "integer", "description": "Expected completion epoch time in milliseconds." },
+        "durationHours": { "type": "integer", "description": "Configured session duration in hours." },
+        "rewardAmount": { "type": "number", "description": "MOBITIK reward for completing the session." },
+        "status": { "type": "string", "enum": ["ACTIVE", "COMPLETED", "CLAIMED", "EXPIRED"], "description": "Session lifecycle status." },
+        "claimed": { "type": "boolean", "description": "Whether the reward has been claimed." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": [
+        "userId", "sessionNumber", "startTimeMs", "endTimeMs", "durationHours",
+        "rewardAmount", "status", "claimed", "createdAt", "updatedAt"
+      ]
+    },
+    "WalletTransaction": {
+      "title": "WalletTransaction",
+      "description": "Ledger record for mining rewards, referral rewards, transfers, swaps, withdrawals, and admin adjustments.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Primary user UID who owns or initiated the transaction." },
+        "counterpartyUserId": { "type": "string", "description": "Counterparty UID for transfers." },
+        "type": { "type": "string", "enum": ["MINING_REWARD", "REFERRAL_REWARD", "TRANSFER_OUT", "TRANSFER_IN", "SWAP", "WITHDRAWAL", "ADMIN_ADJUSTMENT"], "description": "Transaction type." },
+        "senderAddress": { "type": "string", "description": "Sender MOBITIK address or SYSTEM." },
+        "recipientAddress": { "type": "string", "description": "Recipient MOBITIK or external BEP-20 address." },
+        "amount": { "type": "number", "description": "Transaction amount." },
+        "fee": { "type": "number", "description": "Applicable network/service fee." },
+        "tokenSymbol": { "type": "string", "description": "Source token symbol (MBTK or USDT)." },
+        "swapToToken": { "type": "string", "description": "Target token symbol for swaps." },
+        "swapReceivedAmount": { "type": "number", "description": "Target token amount received in swap." },
+        "note": { "type": "string", "description": "Optional transaction memo." },
+        "status": { "type": "string", "enum": ["PENDING", "COMPLETED", "CONFIRMED", "FAILED", "CANCELLED", "REVERSED"], "description": "Transaction status." },
+        "txHash": { "type": "string", "description": "Unique ledger or blockchain transaction reference hash." },
+        "sessionNumber": { "type": "integer", "description": "Associated mining session number if applicable." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": [
+        "userId", "counterpartyUserId", "type", "senderAddress", "recipientAddress",
+        "amount", "fee", "tokenSymbol", "swapToToken", "swapReceivedAmount",
+        "note", "status", "txHash", "sessionNumber", "createdAt", "updatedAt"
+      ]
+    },
+    "UsdtWithdrawal": {
+      "title": "UsdtWithdrawal",
+      "description": "External USDT withdrawal request on BNB Smart Chain (BEP-20) or supported networks.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user requesting withdrawal." },
+        "username": { "type": "string", "description": "Username of requester." },
+        "destinationAddress": { "type": "string", "description": "External BEP-20 destination wallet address." },
+        "network": { "type": "string", "description": "Blockchain network (e.g. BNB Smart Chain (BEP-20))." },
+        "amountUsdt": { "type": "number", "description": "Gross USDT withdrawal amount requested." },
+        "networkFeeUsdt": { "type": "number", "description": "Network gas/transfer fee in USDT." },
+        "platformFeeUsdt": { "type": "number", "description": "Platform processing fee in USDT." },
+        "finalAmountUsdt": { "type": "number", "description": "Net USDT amount to be received." },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "CONFIRMED", "REJECTED", "FAILED", "CANCELLED"], "description": "Withdrawal processing status." },
+        "txHash": { "type": "string", "description": "Verified on-chain blockchain transaction hash." },
+        "adminNote": { "type": "string", "description": "Admin review or verification note." },
+        "idempotencyKey": { "type": "string", "description": "Unique client idempotency key preventing duplicate submissions." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": [
+        "userId", "username", "destinationAddress", "network", "amountUsdt",
+        "networkFeeUsdt", "platformFeeUsdt", "finalAmountUsdt", "status",
+        "txHash", "adminNote", "idempotencyKey", "createdAt", "updatedAt"
+      ]
+    },
+    "ReferralRecord": {
+      "title": "ReferralRecord",
+      "description": "Relationship between a referring user and an invited user.",
+      "type": "object",
+      "properties": {
+        "referrerUserId": { "type": "string", "description": "UID of the user who shared the referral code." },
+        "referredUserId": { "type": "string", "description": "UID of the newly registered user." },
+        "referredUsername": { "type": "string", "description": "Username of the invited user." },
+        "referralCode": { "type": "string", "description": "Referral code used." },
+        "status": { "type": "string", "enum": ["REGISTERED", "ELIGIBLE", "REWARDED", "FLAGGED"], "description": "Eligibility and reward status." },
+        "rewardAmount": { "type": "number", "description": "MOBITIK reward amount credited." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": [
+        "referrerUserId", "referredUserId", "referredUsername", "referralCode",
+        "status", "rewardAmount", "createdAt", "updatedAt"
+      ]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "In-app notification for mining, referrals, wallet transfers, swaps, withdrawals, security, and announcements.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Recipient user UID." },
+        "senderUid": { "type": "string", "description": "UID of user/system that created the notification." },
+        "title": { "type": "string", "description": "Notification title." },
+        "message": { "type": "string", "description": "Notification body." },
+        "category": { "type": "string", "enum": ["MINING", "REFERRAL", "WALLET", "SWAP", "WITHDRAWAL", "SECURITY", "ANNOUNCEMENT"], "description": "Notification category." },
+        "isRead": { "type": "boolean", "description": "Whether the user has read the notification." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": [
+        "userId", "senderUid", "title", "message", "category", "isRead", "createdAt", "updatedAt"
+      ]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "User support ticket and administrator response.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user submitting the ticket." },
+        "name": { "type": "string", "description": "Submitter name." },
+        "email": { "type": "string", "description": "Submitter contact email." },
+        "subject": { "type": "string", "description": "Ticket subject line." },
+        "message": { "type": "string", "description": "Detailed support message." },
+        "status": { "type": "string", "enum": ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"], "description": "Ticket lifecycle status." },
+        "adminReply": { "type": "string", "description": "Response from support administrator." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": [
+        "userId", "name", "email", "subject", "message", "status", "adminReply", "createdAt", "updatedAt"
+      ]
+    },
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Global administrator configuration for mining, referrals, wallet, swap, liquidity pool, withdrawals, and content.",
+      "type": "object",
+      "properties": {
+        "configKey": { "type": "string", "description": "Identifier key, always 'global'." },
+        "miningDurationHours": { "type": "integer", "description": "Mining session duration in hours (default 12)." },
+        "miningReward": { "type": "number", "description": "MOBITIK reward per completed session (default 0.22)." },
+        "miningEnabled": { "type": "boolean", "description": "Master switch for mining sessions." },
+        "referralReward": { "type": "number", "description": "Configurable MOBITIK reward per eligible referral." },
+        "referralEligibilitySessions": { "type": "integer", "description": "Completed sessions required for a referral to become eligible." },
+        "sendEnabled": { "type": "boolean", "description": "Whether outgoing wallet transfers are enabled." },
+        "receiveEnabled": { "type": "boolean", "description": "Whether incoming wallet transfers are enabled." },
+        "swapEnabled": { "type": "boolean", "description": "Whether MBTK-to-USDT swapping is enabled by admin." },
+        "swapRateUsdt": { "type": "number", "description": "Configured reference price (default 0.15 USDT per 1 MBTK)." },
+        "swapFeePercent": { "type": "number", "description": "Swap fee percentage." },
+        "liquidityPoolUsdt": { "type": "number", "description": "Authorized USDT liquidity pool available for redemptions/swaps." },
+        "withdrawalsEnabled": { "type": "boolean", "description": "Whether external USDT withdrawals are enabled." },
+        "minWithdrawalUsdt": { "type": "number", "description": "Minimum USDT withdrawal amount." },
+        "maxWithdrawalUsdt": { "type": "number", "description": "Maximum USDT withdrawal amount." },
+        "withdrawalNetworkFeeUsdt": { "type": "number", "description": "Network fee in USDT for BEP-20 withdrawals." },
+        "withdrawalPlatformFeeUsdt": { "type": "number", "description": "Platform fee in USDT for withdrawals." },
+        "bscUsdtContractAddress": { "type": "string", "description": "Verified BEP-20 USDT token contract on BNB Smart Chain." },
+        "bscMbtkContractAddress": { "type": "string", "description": "Optional BEP-20 MBTK token contract on BNB Smart Chain." },
+        "networkFeeMobitik": { "type": "number", "description": "Internal transfer fee in MOBITIK." },
+        "supportEmail": { "type": "string", "description": "Official support email configured by admin." },
+        "maintenanceMode": { "type": "boolean", "description": "Whether maintenance mode is active." },
+        "announcementText": { "type": "string", "description": "Active system banner announcement." },
+        "whitepaperSummary": { "type": "string", "description": "Editable whitepaper executive summary and tokenomics note." },
+        "updatedByUid": { "type": "string", "description": "UID of admin who last updated settings." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": [
+        "configKey", "miningDurationHours", "miningReward", "miningEnabled",
+        "referralReward", "referralEligibilitySessions", "sendEnabled", "receiveEnabled",
+        "swapEnabled", "swapRateUsdt", "swapFeePercent", "liquidityPoolUsdt",
+        "withdrawalsEnabled", "minWithdrawalUsdt", "maxWithdrawalUsdt",
+        "withdrawalNetworkFeeUsdt", "withdrawalPlatformFeeUsdt",
+        "bscUsdtContractAddress", "bscMbtkContractAddress", "networkFeeMobitik",
+        "supportEmail", "maintenanceMode", "announcementText", "whitepaperSummary",
+        "updatedByUid", "createdAt", "updatedAt"
+      ]
+    },
+    "FaqEntry": {
+      "title": "FaqEntry",
+      "description": "Expandable FAQ entry managed by administrators.",
+      "type": "object",
+      "properties": {
+        "question": { "type": "string", "description": "FAQ question text." },
+        "answer": { "type": "string", "description": "Detailed FAQ answer." },
+        "category": { "type": "string", "description": "FAQ category grouping." },
+        "sortOrder": { "type": "integer", "description": "Display order." },
+        "isPublished": { "type": "boolean", "description": "Whether visible to users." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": [
+        "question", "answer", "category", "sortOrder", "isPublished", "createdAt", "updatedAt"
+      ]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable security audit log for administrator actions.",
+      "type": "object",
+      "properties": {
+        "adminUid": { "type": "string", "description": "UID of administrator performing the action." },
+        "adminEmail": { "type": "string", "description": "Email of administrator." },
+        "actionType": { "type": "string", "description": "Category of admin action." },
+        "targetId": { "type": "string", "description": "Target user or document ID." },
+        "details": { "type": "string", "description": "Description of the change and justification." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." }
+      },
+      "required": [
+        "adminUid", "adminEmail", "actionType", "targetId", "details", "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profiles, MBTK/USDT balances, and connected Web3 wallet info."
+    },
+    "/public_profiles/{userId}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Public non-PII profiles for wallet address lookup, referral lookup, and leaderboards."
+    },
+    "/mining_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/MiningSession" },
+      "description": "12-hour server-validated mining sessions."
+    },
+    "/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/WalletTransaction" },
+      "description": "Wallet, swap, and reward ledger transactions."
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": { "$ref": "#/entities/UsdtWithdrawal" },
+      "description": "External USDT withdrawal requests and on-chain verification records."
+    },
+    "/referrals/{referralId}": {
+      "schema": { "$ref": "#/entities/ReferralRecord" },
+      "description": "User referral relationships and reward statuses."
+    },
+    "/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/AppNotification" },
+      "description": "In-app user notifications."
+    },
+    "/support_tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/SupportTicket" },
+      "description": "Customer support tickets and admin replies."
+    },
+    "/app_config/{configId}": {
+      "schema": { "$ref": "#/entities/AppConfig" },
+      "description": "Global application, mining, swap reference rate, liquidity, and withdrawal settings."
+    },
+    "/faq_entries/{faqId}": {
+      "schema": { "$ref": "#/entities/FaqEntry" },
+      "description": "Frequently asked questions."
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Administrator security audit logs."
+    }
+  }
+}
