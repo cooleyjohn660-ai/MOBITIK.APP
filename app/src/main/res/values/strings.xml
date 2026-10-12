@@ -9,4 +9,14 @@
     <string name="connect_trust_wallet">Connect Trust Wallet</string>
     <string name="withdraw_usdt">Withdraw USDT (BEP-20)</string>
     <string name="admin_console">Admin Security Console</string>
+    <string name="tos_dialog_title">Terms of Service</string>
+    <string name="tos_dialog_subtitle">12-Hour Mining Cycle &amp; Reward Rules</string>
+    <string name="tos_section_cycle_title">1. 12-Hour Cloud Mining Cycle</string>
+    <string name="tos_section_cycle_desc">Each mining session runs for exactly 12 hours on MOBITIK cloud nodes without draining your device battery or data. Once the 12-hour countdown ends, mining pauses automatically until you claim your reward and start a new cycle.</string>
+    <string name="tos_section_rewards_title">2. Mining &amp; Referral Reward Rules</string>
+    <string name="tos_section_rewards_desc">• Base Reward: Earn +0.22 MBTK per completed 12-hour session.\n• Referral Bonus: Earn +0.05 MBTK for each verified Pioneer who joins with your referral code.\n• Ad-Supported Node Activation: Starting a mining session may display a short rewarded ad to support ecosystem liquidity.</string>
+    <string name="tos_section_swap_title">3. Swap, Fair Play &amp; Withdrawals</string>
+    <string name="tos_section_swap_desc">• Reference Rate: 1 MBTK = 0.15 USDT (minimum swap 50 MBTK).\n• Withdrawals: Minimum $2.00 USDT with a 0.25 USDT fee on BNB Smart Chain (BEP-20), or 0% fee via instant App-to-App transfer.\n• Anti-Bot Policy: One account per person. Automated scripts or multi-accounting will freeze unverified rewards.</string>
+    <string name="tos_agreement_label">I have read and agree to the MOBITIK Terms of Service, 12-hour mining cycle, and reward rules.</string>
+    <string name="tos_accept_button">Accept &amp; Continue</string>
 </resources>

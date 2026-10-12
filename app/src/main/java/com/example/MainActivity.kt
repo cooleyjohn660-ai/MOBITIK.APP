@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
@@ -107,6 +109,7 @@ import com.example.ui.auth.MobitikSignInScreen
 import com.example.ui.auth.PioneerOnboardingRegistrationScreen
 import com.example.ui.auth.signOutMobitik
 import com.example.ui.components.NotificationsBottomSheet
+import com.example.ui.components.TermsOfServiceDialog
 import com.example.ui.screens.AdminConsoleScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.HomeMiningScreen
@@ -156,6 +159,13 @@ fun MobitikRootApp() {
     val auth = remember { Firebase.auth }
     val credentialManager = remember(context) { CredentialManager.create(context) }
 
+    val prefs = remember(context) {
+        context.getSharedPreferences("mobitik_app_prefs", Context.MODE_PRIVATE)
+    }
+    var hasAcceptedTos by rememberSaveable {
+        mutableStateOf(prefs.getBoolean("tos_accepted_v1", false))
+    }
+
     var currentUser by remember { mutableStateOf<FirebaseUser?>(auth.currentUser) }
     var sessionEmail by rememberSaveable { mutableStateOf<String?>(null) }
     var sessionDisplayName by rememberSaveable { mutableStateOf<String?>(null) }
@@ -181,6 +191,15 @@ fun MobitikRootApp() {
                     sessionDisplayName = displayName
                 }
             )
+            if (!hasAcceptedTos) {
+                TermsOfServiceDialog(
+                    isFirstLaunch = true,
+                    onAccept = {
+                        prefs.edit().putBoolean("tos_accepted_v1", true).apply()
+                        hasAcceptedTos = true
+                    }
+                )
+            }
         }
     } else {
         val activeUid = currentUser?.uid
@@ -240,6 +259,15 @@ fun MobitikRootApp() {
                     )
                 }
             )
+            if (!hasAcceptedTos) {
+                TermsOfServiceDialog(
+                    isFirstLaunch = true,
+                    onAccept = {
+                        prefs.edit().putBoolean("tos_accepted_v1", true).apply()
+                        hasAcceptedTos = true
+                    }
+                )
+            }
         }
     }
 }
@@ -280,6 +308,7 @@ fun MobitikAuthenticatedScaffold(
     var accountSubTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Settings, 1 = Referrals, 2 = History
     var profileInitialSection by rememberSaveable { mutableIntStateOf(0) }
     var showNotificationsSheet by rememberSaveable { mutableStateOf(false) }
+    var showTermsOfServiceDialog by rememberSaveable { mutableStateOf(false) }
     var showAdminConsole by rememberSaveable { mutableStateOf(viewModel.isAdminUser) }
     var adminAutoOpened by rememberSaveable { mutableStateOf(false) }
 
@@ -451,6 +480,11 @@ fun MobitikAuthenticatedScaffold(
                         accountSubTab = 0
                         profileInitialSection = 1
                         currentTab = MobitikNavDestination.PROFILE
+                    }
+                )
+                add(
+                    DrawerMenuItem("Terms of Service", Icons.Default.Gavel) {
+                        showTermsOfServiceDialog = true
                     }
                 )
                 if (viewModel.isAdminUser) {
@@ -855,6 +889,14 @@ fun MobitikAuthenticatedScaffold(
                     notifications = notifications,
                     onMarkRead = { id -> viewModel.onMarkNotificationRead(id) },
                     onDismiss = { showNotificationsSheet = false }
+                )
+            }
+
+            if (showTermsOfServiceDialog) {
+                TermsOfServiceDialog(
+                    isFirstLaunch = false,
+                    onAccept = { showTermsOfServiceDialog = false },
+                    onDismissRequest = { showTermsOfServiceDialog = false }
                 )
             }
         }

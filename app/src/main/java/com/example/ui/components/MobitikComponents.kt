@@ -24,19 +24,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +53,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,12 +69,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.R
 import com.example.data.model.AppNotification
 import com.example.ui.theme.JetBrainsMonoFamily
@@ -575,3 +589,233 @@ fun formatEpochMs(epochMs: Long): String {
     val sdf = SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault())
     return sdf.format(Date(epochMs))
 }
+
+@Composable
+fun TermsOfServiceDialog(
+    onAccept: () -> Unit,
+    isFirstLaunch: Boolean = true,
+    onDismissRequest: () -> Unit = {}
+) {
+    var agreedToTerms by remember { mutableStateOf(true) }
+
+    Dialog(
+        onDismissRequest = {
+            if (!isFirstLaunch) {
+                onDismissRequest()
+            }
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = !isFirstLaunch,
+            dismissOnClickOutside = !isFirstLaunch,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 24.dp)
+                .border(
+                    width = 1.dp,
+                    color = MobitikGold.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                .testTag("terms_of_service_dialog")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MobitikOrange.copy(alpha = 0.16f),
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Gavel,
+                                    contentDescription = stringResource(R.string.tos_dialog_title),
+                                    tint = MobitikGold,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = stringResource(R.string.tos_dialog_title),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.tos_dialog_subtitle),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MobitikGold
+                            )
+                        }
+                    }
+
+                    if (!isFirstLaunch) {
+                        IconButton(
+                            onClick = onDismissRequest,
+                            modifier = Modifier.testTag("tos_close_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Terms of Service"
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Scrollable rules content
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(310.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    TermsRuleSectionCard(
+                        icon = Icons.Default.Schedule,
+                        iconTint = MobitikOrange,
+                        title = stringResource(R.string.tos_section_cycle_title),
+                        description = stringResource(R.string.tos_section_cycle_desc)
+                    )
+
+                    TermsRuleSectionCard(
+                        icon = Icons.Default.Bolt,
+                        iconTint = MobitikGold,
+                        title = stringResource(R.string.tos_section_rewards_title),
+                        description = stringResource(R.string.tos_section_rewards_desc)
+                    )
+
+                    TermsRuleSectionCard(
+                        icon = Icons.Default.VerifiedUser,
+                        iconTint = MobitikSuccessGreen,
+                        title = stringResource(R.string.tos_section_swap_title),
+                        description = stringResource(R.string.tos_section_swap_desc)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Agreement Checkbox Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { agreedToTerms = !agreedToTerms }
+                        .padding(vertical = 4.dp)
+                        .testTag("tos_agreement_row"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = agreedToTerms,
+                        onCheckedChange = { agreedToTerms = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MobitikOrange,
+                            checkmarkColor = MobitikBlack
+                        ),
+                        modifier = Modifier.testTag("tos_agreement_checkbox")
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.tos_agreement_label),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = onAccept,
+                    enabled = agreedToTerms,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MobitikOrange,
+                        contentColor = MobitikBlack,
+                        disabledContainerColor = MobitikSurfaceElevated,
+                        disabledContentColor = MobitikTextSecondary
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .testTag("tos_accept_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.tos_accept_button),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TermsRuleSectionCard(
+    icon: ImageVector,
+    iconTint: Color,
+    title: String,
+    description: String
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 18.sp
+            )
+        }
+    }
+}
+
