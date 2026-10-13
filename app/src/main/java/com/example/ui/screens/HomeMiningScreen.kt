@@ -114,7 +114,6 @@ fun HomeMiningScreen(
     isBusy: Boolean,
     onStartMining: () -> Unit,
     onClaimReward: () -> Unit,
-    onRewardedAdBoost: () -> Unit = {},
     onOpenNotifications: () -> Unit,
     onNavigateToWalletTab: (subTab: Int) -> Unit,
     onNavigateToReferrals: () -> Unit,
@@ -165,50 +164,45 @@ fun HomeMiningScreen(
     }
 
     val triggerMiningWithAd: () -> Unit = {
-        val targetAction: () -> Unit
-        val rewardLabel: String
-        when {
-            timerState.isReadyToClaim -> {
+        if (!timerState.isMiningActive || timerState.isReadyToClaim) {
+            val targetAction: () -> Unit
+            val rewardLabel: String
+            if (timerState.isReadyToClaim) {
                 targetAction = onClaimReward
-                rewardLabel = "Claim +${config.miningReward} MBTK"
-            }
-            !timerState.isMiningActive -> {
+                rewardLabel = "Claim Mining Reward (+${config.miningReward} MBTK)"
+            } else {
                 targetAction = onStartMining
-                rewardLabel = "Start 12h Mining (+${config.miningReward} MBTK)"
+                rewardLabel = "Watch Full Ad to Start 12h Mining (+${config.miningReward} MBTK)"
             }
-            else -> {
-                targetAction = onRewardedAdBoost
-                rewardLabel = "Ad Mining Boost (+0.05 MBTK)"
-            }
-        }
 
-        val activity = context.findActivity()
-        val currentAd = loadedRewardedAd
-        if (currentAd != null && activity != null) {
-            var rewardEarned = false
-            currentAd.fullScreenContentCallback = object : FullScreenContentCallback() {
-                override fun onAdDismissedFullScreenContent() {
-                    loadedRewardedAd = null
-                    loadAdMobRewardedAd()
-                    if (rewardEarned) {
-                        targetAction.invoke()
+            val activity = context.findActivity()
+            val currentAd = loadedRewardedAd
+            if (currentAd != null && activity != null) {
+                var rewardEarned = false
+                currentAd.fullScreenContentCallback = object : FullScreenContentCallback() {
+                    override fun onAdDismissedFullScreenContent() {
+                        loadedRewardedAd = null
+                        loadAdMobRewardedAd()
+                        if (rewardEarned) {
+                            targetAction.invoke()
+                        }
+                    }
+
+                    override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                        loadedRewardedAd = null
+                        loadAdMobRewardedAd()
+                        pendingRewardLabel = rewardLabel
+                        pendingRewardedAction = targetAction
                     }
                 }
-
-                override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                    loadedRewardedAd = null
-                    loadAdMobRewardedAd()
-                    pendingRewardLabel = rewardLabel
-                    pendingRewardedAction = targetAction
+                currentAd.show(activity) {
+                    rewardEarned = true
                 }
+            } else {
+                loadAdMobRewardedAd()
+                pendingRewardLabel = rewardLabel
+                pendingRewardedAction = targetAction
             }
-            currentAd.show(activity) {
-                rewardEarned = true
-            }
-        } else {
-            loadAdMobRewardedAd()
-            pendingRewardLabel = rewardLabel
-            pendingRewardedAction = targetAction
         }
     }
 
@@ -244,12 +238,12 @@ fun HomeMiningScreen(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Center Pioneer Globe Circle — always interactive so user can start, claim, or watch rewarded ad boost
+                    // Center Pioneer Globe Circle
                     Box(
                         modifier = Modifier
                             .size(220.dp)
                             .clip(CircleShape)
-                            .clickable(enabled = !isBusy) {
+                            .clickable(enabled = !isBusy && !timerState.isMiningActive) {
                                 triggerMiningWithAd()
                             }
                             .testTag("mining_primary_action_button"),
@@ -298,7 +292,7 @@ fun HomeMiningScreen(
                                 text = when {
                                     timerState.isReadyToClaim -> "CLAIM +${config.miningReward} MBTK"
                                     timerState.isMiningActive -> timerState.formattedCountdown
-                                    else -> "TAP TO MINE"
+                                    else -> "WATCH AD TO MINE"
                                 },
                                 color = MobitikGold,
                                 fontFamily = JetBrainsMonoFamily,
@@ -324,11 +318,11 @@ fun HomeMiningScreen(
                             label = "${user.totalReferrals} Team",
                             onClick = onNavigateToReferrals
                         )
-                        // Mining Bolt Button (triggers Rewarded Ad + Mining / Boost)
+                        // Mining Bolt Indicator
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .clickable(enabled = !isBusy) {
+                                .clickable(enabled = !isBusy && !timerState.isMiningActive) {
                                     triggerMiningWithAd()
                                 }
                                 .testTag("mining_bolt_button")
@@ -374,12 +368,12 @@ fun HomeMiningScreen(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // Pill Action Button below Circle — always triggers Rewarded Ad for Start, Claim, or Active Boost
+                // Pill Action Button below Circle — starts mining on full ad watch
                 Button(
                     onClick = {
                         triggerMiningWithAd()
                     },
-                    enabled = !isBusy,
+                    enabled = !isBusy && (!timerState.isMiningActive || timerState.isReadyToClaim),
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.White,
@@ -391,17 +385,17 @@ fun HomeMiningScreen(
                         .testTag("mining_pill_action_button")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.PlayCircleFilled,
+                        imageVector = if (timerState.isMiningActive) Icons.Default.Bolt else Icons.Default.PlayCircleFilled,
                         contentDescription = null,
-                        tint = MobitikOrange,
+                        tint = if (timerState.isMiningActive) MobitikSuccessGreen else MobitikOrange,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = when {
-                            timerState.isReadyToClaim -> "Watch Ad & Claim +${config.miningReward} MBTK"
-                            timerState.isMiningActive -> "Watch Ad • Boost +0.05 MBTK (${timerState.formattedCountdown})"
-                            else -> "Start 12h Mining"
+                            timerState.isReadyToClaim -> "Claim +${config.miningReward} MBTK"
+                            timerState.isMiningActive -> "Mining Active (${timerState.formattedCountdown})"
+                            else -> "Watch Full Ad to Start Mining"
                         },
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 13.sp,
@@ -425,7 +419,7 @@ fun HomeMiningScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Mine ${config.miningReward} MBTK every 12h. Swap to USDT at 1 MBTK = ${config.swapRateUsdt} USDT or withdraw from $${"%.2f".format(config.minWithdrawalUsdt)}.",
+                        text = "Watch the full sponsored ad to start your 12-hour mining session. Mine ${config.miningReward} MBTK per session.",
                         color = Color.White.copy(alpha = 0.9f),
                         fontSize = 12.sp,
                         lineHeight = 16.sp
@@ -446,9 +440,11 @@ fun HomeMiningScreen(
                     Card(
                         shape = RoundedCornerShape(18.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                            containerColor = Color.White
                         ),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(18.dp))
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Row(
@@ -576,9 +572,9 @@ private fun RewardedMiningAdDialog(
                 .fillMaxWidth(0.94f)
                 .widthIn(max = 460.dp)
                 .clip(RoundedCornerShape(22.dp))
-                .border(1.5.dp, MobitikOrange.copy(alpha = 0.7f), RoundedCornerShape(22.dp))
+                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(22.dp))
                 .testTag("rewarded_ad_dialog"),
-            color = MobitikBlack
+            color = Color.White
         ) {
             Column(
                 modifier = Modifier
@@ -599,7 +595,7 @@ private fun RewardedMiningAdDialog(
                         ) {
                             Text(
                                 text = "Test Ad",
-                                color = MobitikBlack,
+                                color = Color.White,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 11.sp,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -609,24 +605,24 @@ private fun RewardedMiningAdDialog(
                         Text(
                             text = "Google AdMob Rewarded",
                             style = MaterialTheme.typography.labelLarge,
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontWeight = FontWeight.Bold
                         )
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
-                            color = if (remainingSeconds == 0) MobitikSuccessGreen.copy(alpha = 0.2f) else MobitikCharcoal,
+                            color = if (remainingSeconds == 0) MobitikSuccessGreen.copy(alpha = 0.15f) else Color(0xFFF1F5F9),
                             shape = RoundedCornerShape(50),
                             modifier = Modifier.border(
                                 1.dp,
-                                if (remainingSeconds == 0) MobitikSuccessGreen else MobitikOrange,
+                                if (remainingSeconds == 0) MobitikSuccessGreen else Color(0xFFCBD5E1),
                                 RoundedCornerShape(50)
                             )
                         ) {
                             Text(
-                                text = if (remainingSeconds == 0) "Reward Granted ✓" else "Reward in ${remainingSeconds}s",
-                                color = if (remainingSeconds == 0) MobitikSuccessGreen else MobitikGold,
+                                text = if (remainingSeconds == 0) "Reward Granted ✓" else "Reward in " + remainingSeconds + "s",
+                                color = if (remainingSeconds == 0) MobitikSuccessGreen else MobitikOrange,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -641,7 +637,7 @@ private fun RewardedMiningAdDialog(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Close Ad",
-                                    tint = Color.White
+                                    tint = Color(0xFF64748B)
                                 )
                             }
                         }
@@ -654,23 +650,15 @@ private fun RewardedMiningAdDialog(
                         .fillMaxWidth()
                         .height(210.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color(0xFF23182B),
-                                    MobitikCharcoal,
-                                    MobitikBlack
-                                )
-                            )
-                        )
-                        .border(1.dp, MobitikOrange.copy(alpha = 0.45f), RoundedCornerShape(16.dp)),
+                        .background(Color(0xFFF8FAFC))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.img_mobitik_hero_1791779396147),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        alpha = 0.28f,
+                        alpha = 0.2f,
                         modifier = Modifier.fillMaxSize()
                     )
 
@@ -687,7 +675,7 @@ private fun RewardedMiningAdDialog(
                                 Icon(
                                     imageVector = if (remainingSeconds == 0) Icons.Default.CheckCircle else Icons.Default.PlayCircleFilled,
                                     contentDescription = null,
-                                    tint = MobitikBlack,
+                                    tint = Color.White,
                                     modifier = Modifier.size(34.dp)
                                 )
                             }
@@ -696,7 +684,7 @@ private fun RewardedMiningAdDialog(
                         Text(
                             text = if (remainingSeconds == 0) "AD COMPLETED — REWARD UNLOCKED" else "PLAYING REWARDED VIDEO AD...",
                             style = MaterialTheme.typography.titleSmall,
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontWeight = FontWeight.ExtraBold,
                             textAlign = TextAlign.Center
                         )
@@ -704,15 +692,15 @@ private fun RewardedMiningAdDialog(
                         Text(
                             text = rewardLabel,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MobitikGold,
+                            color = MobitikOrange,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Ad Unit: $adUnitId",
+                            text = "Ad Unit: " + adUnitId,
                             fontFamily = JetBrainsMonoFamily,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.75f)
+                            color = Color(0xFF64748B)
                         )
                     }
                 }
@@ -721,7 +709,7 @@ private fun RewardedMiningAdDialog(
                 LinearProgressIndicator(
                     progress = { (totalSeconds - remainingSeconds) / totalSeconds.toFloat() },
                     color = if (remainingSeconds == 0) MobitikSuccessGreen else MobitikOrange,
-                    trackColor = MobitikCharcoal,
+                    trackColor = Color(0xFFE2E8F0),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(8.dp)
@@ -738,14 +726,17 @@ private fun RewardedMiningAdDialog(
                         onClick = onDismiss,
                         modifier = Modifier.weight(0.38f)
                     ) {
-                        Text("Close", color = Color.White.copy(alpha = 0.75f))
+                        Text("Close", color = Color(0xFF64748B))
                     }
 
                     Button(
                         onClick = onAdRewardEarned,
+                        enabled = remainingSeconds == 0,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (remainingSeconds == 0) MobitikSuccessGreen else MobitikOrange,
-                            contentColor = MobitikBlack
+                            containerColor = MobitikSuccessGreen,
+                            contentColor = Color.White,
+                            disabledContainerColor = Color(0xFFE2E8F0),
+                            disabledContentColor = Color(0xFF94A3B8)
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -754,7 +745,7 @@ private fun RewardedMiningAdDialog(
                             .testTag("rewarded_ad_confirm_button")
                     ) {
                         Text(
-                            text = if (remainingSeconds == 0) "Claim Reward" else "Claim (${remainingSeconds}s)",
+                            text = if (remainingSeconds == 0) "Start 12h Mining Now" else "Watch Ad (" + remainingSeconds + "s)",
                             fontWeight = FontWeight.ExtraBold
                         )
                     }

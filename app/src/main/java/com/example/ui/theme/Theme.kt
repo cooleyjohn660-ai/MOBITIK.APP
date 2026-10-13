@@ -1,70 +1,46 @@
 package com.example.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 
-private val MobitikDarkColorScheme = darkColorScheme(
+// Pure Elegant Light Theme — Strict No-Black UI
+val MobitikLightColorScheme = lightColorScheme(
     primary = MobitikOrange,
-    onPrimary = MobitikBlack,
-    primaryContainer = MobitikOrangeDeep,
-    onPrimaryContainer = MobitikWhite,
-    secondary = MobitikWhite,
-    onSecondary = MobitikBlack,
-    secondaryContainer = MobitikSurfaceElevated,
-    onSecondaryContainer = MobitikWhite,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFFFF2E5),
+    onPrimaryContainer = Color(0xFF8A3B00),
+    secondary = Color(0xFF1E293B),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFF1F5F9),
+    onSecondaryContainer = Color(0xFF0F172A),
     tertiary = MobitikGold,
-    onTertiary = MobitikBlack,
-    background = MobitikBlack,
-    onBackground = MobitikWhite,
-    surface = MobitikCharcoal,
-    onSurface = MobitikWhite,
-    surfaceVariant = MobitikSurfaceElevated,
-    onSurfaceVariant = MobitikTextSecondary,
+    onTertiary = Color(0xFF1E293B),
+    tertiaryContainer = Color(0xFFFEF3C7),
+    onTertiaryContainer = Color(0xFF78350F),
+    background = Color(0xFFF8FAFC),
+    onBackground = Color(0xFF0F172A),
+    surface = Color.White,
+    onSurface = Color(0xFF0F172A),
+    surfaceVariant = Color(0xFFF1F5F9),
+    onSurfaceVariant = Color(0xFF475569),
     error = MobitikErrorRed,
-    onError = MobitikWhite,
-    outline = MobitikBorderDark
-)
-
-private val MobitikLightColorScheme = lightColorScheme(
-    primary = MobitikOrange,
-    onPrimary = MobitikWhite,
-    primaryContainer = MobitikOrangeLight,
-    onPrimaryContainer = MobitikBlack,
-    secondary = MobitikLightTextPrimary,
-    onSecondary = MobitikWhite,
-    secondaryContainer = MobitikLightSurfaceVariant,
-    onSecondaryContainer = MobitikLightTextPrimary,
-    tertiary = MobitikOrangeDeep,
-    onTertiary = MobitikWhite,
-    background = MobitikLightBg,
-    onBackground = MobitikLightTextPrimary,
-    surface = MobitikLightCard,
-    onSurface = MobitikLightTextPrimary,
-    surfaceVariant = MobitikLightSurfaceVariant,
-    onSurfaceVariant = MobitikLightTextSecondary,
-    error = MobitikErrorRed,
-    onError = MobitikWhite,
-    outline = MobitikTextMuted
+    onError = Color.White,
+    errorContainer = Color(0xFFFEE2E2),
+    onErrorContainer = Color(0xFF991B1B),
+    outline = Color(0xFFCBD5E1),
+    outlineVariant = Color(0xFFE2E8F0)
 )
 
 @Composable
 fun MyApplicationTheme(
-    themeMode: String = "DARK",
+    themeMode: String = "LIGHT",
     content: @Composable () -> Unit
 ) {
-    val useDark = when (themeMode) {
-        "LIGHT" -> false
-        "SYSTEM" -> isSystemInDarkTheme()
-        else -> true
-    }
-
-    val colorScheme = if (useDark) MobitikDarkColorScheme else MobitikLightColorScheme
-
+    // Strictly Light Theme: No black background, ultra-smooth modern interaction
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = MobitikLightColorScheme,
         typography = Typography,
         content = content
     )

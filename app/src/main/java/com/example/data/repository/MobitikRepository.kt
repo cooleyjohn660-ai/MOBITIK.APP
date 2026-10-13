@@ -13,6 +13,9 @@ import com.example.data.model.SupportTicket
 import com.example.data.model.UsdtWithdrawal
 import com.example.data.model.UserProfile
 import com.example.data.model.WalletTransaction
+import com.example.data.model.KycSubmission
+import com.example.data.model.KycFaceIndex
+import android.util.Log
 import com.example.data.remote.BscWeb3Client
 import com.example.data.remote.OperationType
 import com.example.data.remote.handleFirestoreError
@@ -887,77 +890,65 @@ class MobitikRepository(
             val txHash = generateTxHash("AUTO")
             val txId = "tx_out_${UUID.randomUUID().toString().replace("-", "").take(16)}"
 
-            if (isUsdtTransfer) {
-                require(amount <= user.usdtBalance) {
-                    "Insufficient USDT balance (${String.format("%.2f", user.usdtBalance)} USDT)."
-                }
-                db.collection("users").document(uid).update(
-                    mapOf(
-                        "usdtBalance" to (user.usdtBalance - amount).coerceAtLeast(0.0),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                ).await()
-
-                val tx = WalletTransaction(
-                    id = txId,
-                    userId = uid,
-                    counterpartyUserId = recipientUid,
-                    type = "TRANSFER_OUT",
-                    senderAddress = user.walletAddress,
-                    recipientAddress = resolvedAddress,
-                    amount = amount,
-                    fee = 0.0,
-                    tokenSymbol = "USDT",
-                    note = cleanNote.ifBlank { "App-to-App Auto USDT Transfer" }.take(200),
-                    status = "COMPLETED",
-                    txHash = txHash
-                )
-                db.collection("transactions").document(txId).set(tx.toCreateMap()).await()
-
-                createNotification(
-                    recipientUid = recipientUid,
-                    title = "App-to-App Auto Credit: +${"%.2f".format(amount)} USDT",
-                    message = "Received ${"%.2f".format(amount)} USDT instantly from @${user.username} ($txHash).",
-                    category = "WALLET"
-                )
-            } else {
-                val fee = config.networkFeeMobitik
-                val totalDeducted = amount + fee
-                require(totalDeducted <= user.availableBalance) {
-                    "Insufficient available balance. Required: ${"%.4f".format(totalDeducted)} MBTK."
-                }
-                db.collection("users").document(uid).update(
-                    mapOf(
-                        "totalBalance" to (user.totalBalance - totalDeducted).coerceAtLeast(0.0),
-                        "availableBalance" to (user.availableBalance - totalDeducted).coerceAtLeast(0.0),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                ).await()
-
-                val tx = WalletTransaction(
-                    id = txId,
-                    userId = uid,
-                    counterpartyUserId = recipientUid,
-                    type = "TRANSFER_OUT",
-                    senderAddress = user.walletAddress,
-                    recipientAddress = resolvedAddress,
-                    amount = amount,
-                    fee = fee,
-                    tokenSymbol = "MOBITIK",
-                    note = cleanNote.ifBlank { "App-to-App Auto MBTK Transfer" }.take(200),
-                    status = "COMPLETED",
-                    txHash = txHash
-                )
-                db.collection("transactions").document(txId).set(tx.toCreateMap()).await()
-
-                createNotification(
-                    recipientUid = recipientUid,
-                    title = "App-to-App Auto Credit: +${"%.4f".format(amount)} MOBITIK",
-                    message = "Received ${"%.4f".format(amount)} MOBITIK instantly from @${user.username} ($txHash).",
-                    category = "WALLET"
-                )
+            // App-to-App Instant Transfer (Strictly MOBITIK MBTK)
+            val fee = config.networkFeeMobitik
+            val totalDeducted = amount + fee
+            require(totalDeducted <= user.availableBalance) {
+                "Insufficient available balance. Required: " + "%.4f".format(totalDeducted) + " MBTK."
             }
 
+            // 1. Debit sender
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "totalBalance" to (user.totalBalance - totalDeducted).coerceAtLeast(0.0),
+                    "availableBalance" to (user.availableBalance - totalDeducted).coerceAtLeast(0.0),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+
+            // 2. Instant credit recipient in users collection
+            try {
+                val recDocRef = db.collection("users").document(recipientUid)
+                val recSnap = recDocRef.get().await()
+                if (recSnap.exists()) {
+                    val currentRecTotal = recSnap.getDouble("totalBalance") ?: 0.0
+                    val currentRecAvail = recSnap.getDouble("availableBalance") ?: 0.0
+                    recDocRef.update(
+                        mapOf(
+                            "totalBalance" to (currentRecTotal + amount),
+                            "availableBalance" to (currentRecAvail + amount),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                }
+            } catch (e: Exception) {
+                Log.w("MobitikRepo", "Direct recipient credit notice: " + e.message)
+            }
+
+            // 3. Record completed transaction
+            val tx = WalletTransaction(
+                id = txId,
+                userId = uid,
+                counterpartyUserId = recipientUid,
+                type = "TRANSFER_OUT",
+                senderAddress = user.walletAddress,
+                recipientAddress = resolvedAddress,
+                amount = amount,
+                fee = fee,
+                tokenSymbol = "MOBITIK",
+                note = cleanNote.ifBlank { "App-to-App Instant MBTK Transfer" }.take(200),
+                status = "COMPLETED",
+                txHash = txHash
+            )
+            db.collection("transactions").document(txId).set(tx.toCreateMap()).await()
+
+            // 4. Send Instant Notification to recipient
+            createNotification(
+                recipientUid = recipientUid,
+                title = "Instant Transfer Received: +" + "%.4f".format(amount) + " MOBITIK",
+                message = "Received " + "%.4f".format(amount) + " MOBITIK instantly from @" + user.username + " (" + txHash + ").",
+                category = "WALLET"
+            )
             Result.success(txHash)
         } catch (e: CancellationException) {
             throw e
@@ -1127,6 +1118,9 @@ class MobitikRepository(
         val uid = requireUserId()
         return try {
             require(config.withdrawalsEnabled) { "External USDT withdrawals are currently paused by administrator." }
+            require(user.kycStatus == "APPROVED") {
+                "KYC Face Verification required before requesting USDT withdrawal. Please complete Face Scan KYC in your Wallet."
+            }
             val cleanDest = destinationAddress.trim()
             require(BscWeb3Client.isValidBep20Address(cleanDest)) {
                 "Invalid BEP-20 destination address. Enter a valid 0x... BNB Smart Chain address."
@@ -1250,6 +1244,224 @@ class MobitikRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.UPDATE, "withdrawals/${withdrawal.id}")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Submits KYC verification with legal identity and live biometric face scan.
+     * Enforces strict One User One Account policy:
+     * If the same biometric face signature is detected across another account, the account is INSTANTLY BANNED.
+     */
+    suspend fun submitKycVerification(
+        user: UserProfile,
+        fullName: String,
+        documentType: String,
+        documentNumber: String,
+        faceScanBase64: String,
+        faceHash: String
+    ): Result<KycSubmission> {
+        val uid = requireUserId()
+        return try {
+            val cleanName = fullName.trim()
+            val cleanDocNum = documentNumber.trim()
+            val cleanHash = faceHash.trim()
+
+            require(cleanName.length >= 2) { "Please enter your full legal name." }
+            require(cleanDocNum.isNotBlank()) { "Please enter your ID/Passport document number." }
+            require(faceScanBase64.isNotBlank() && cleanHash.isNotBlank()) {
+                "Face scan capture is required for KYC biometric verification."
+            }
+
+            // ONE USER ONLY 1 ACCOUNT POLICY:
+            // Check for existing submissions with this faceHash belonging to a DIFFERENT user
+            val duplicateQuery = db.collection("kyc_submissions")
+                .whereEqualTo("faceHash", cleanHash)
+                .get()
+                .await()
+
+            val duplicateSubmission = duplicateQuery.documents.firstOrNull { doc ->
+                val docUid = doc.getString("userId") ?: ""
+                docUid.isNotBlank() && docUid != uid
+            }
+
+            if (duplicateSubmission != null) {
+                // INSTANT BAN! Multiple accounts on the same face!
+                val banReason = "DUPLICATE_FACE_DETECTED: Biometric face scan matches an existing registered account (" + (duplicateSubmission.getString("username") ?: "Pioneer") + "). Instant ban under strict 1-user-1-account policy."
+
+                db.collection("users").document(uid).update(
+                    mapOf(
+                        "isBanned" to true,
+                        "accountStatus" to "BANNED",
+                        "kycStatus" to "BANNED",
+                        "banReason" to banReason,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+
+                try {
+                    db.collection("public_profiles").document(uid).update(
+                        mapOf(
+                            "accountStatus" to "BANNED",
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                } catch (_: Exception) {}
+
+                recordAuditLog(
+                    adminUid = "SECURITY_SYSTEM",
+                    adminEmail = ADMIN_EMAIL,
+                    actionType = "DUPLICATE_FACE_INSTANT_BAN",
+                    targetId = uid,
+                    details = "User @" + user.username + " (" + uid + ") instantly banned: faceHash " + cleanHash + " matched existing account " + duplicateSubmission.id + "."
+                )
+
+                throw IllegalStateException(
+                    "INSTANT BAN: Duplicate face biometrics detected! The One User One Account policy strictly prohibits multi-accounting. This account is permanently banned."
+                )
+            }
+
+            val subId = "kyc_" + uid
+            val submission = KycSubmission(
+                id = subId,
+                userId = uid,
+                userEmail = user.email,
+                username = user.username,
+                fullName = cleanName,
+                documentType = documentType,
+                documentNumber = cleanDocNum,
+                faceScanBase64 = faceScanBase64,
+                faceHash = cleanHash,
+                status = "PENDING"
+            )
+
+            db.collection("kyc_submissions").document(subId).set(submission.toCreateMap()).await()
+
+            val faceIndex = KycFaceIndex(
+                id = cleanHash,
+                faceHash = cleanHash,
+                userId = uid,
+                userEmail = user.email,
+                username = user.username
+            )
+            try {
+                db.collection("kyc_face_index").document(cleanHash).set(faceIndex.toCreateMap()).await()
+            } catch (_: Exception) {}
+
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "kycStatus" to "PENDING",
+                    "kycFullName" to cleanName,
+                    "kycDocumentType" to documentType,
+                    "kycDocumentNumber" to cleanDocNum,
+                    "kycFaceHash" to cleanHash,
+                    "kycSubmittedAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+
+            createNotification(
+                recipientUid = uid,
+                title = "KYC Submitted for Review",
+                message = "Your face scan and identity verification have been submitted. Admin approval is required before USDT withdrawals.",
+                category = "KYC"
+            )
+
+            Result.success(submission)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun observeKycSubmissions(): Flow<List<KycSubmission>> {
+        val path = "kyc_submissions"
+        return db.collection(path)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(KycSubmission::class.java)
+                    .sortedByDescending { it.submittedAt?.toDate()?.time ?: 0L }
+            }
+            .catch { e ->
+                if (e is Exception) handleFirestoreError(e, OperationType.LIST, path)
+                throw e
+            }
+    }
+
+    suspend fun adminReviewKyc(
+        adminEmail: String,
+        submission: KycSubmission,
+        newStatus: String,
+        reason: String
+    ): Result<Unit> {
+        val adminUid = requireUserId()
+        return try {
+            require(isAuthorizedAdminEmail(adminEmail)) { "Unauthorized Admin access." }
+            require(newStatus in listOf("APPROVED", "REJECTED", "BANNED")) { "Invalid KYC status: " + newStatus }
+
+            db.collection("kyc_submissions").document(submission.id).update(
+                mapOf(
+                    "status" to newStatus,
+                    "rejectionReason" to reason.trim(),
+                    "reviewedBy" to adminEmail,
+                    "reviewedAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+
+            val userUpdates = mutableMapOf<String, Any>(
+                "kycStatus" to newStatus,
+                "kycRejectionReason" to if (newStatus == "REJECTED") reason.trim() else "",
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+
+            if (newStatus == "BANNED") {
+                userUpdates["isBanned"] = true
+                userUpdates["accountStatus"] = "BANNED"
+                userUpdates["banReason"] = reason.ifBlank { "Fraudulent or duplicate KYC account - permanently banned by admin." }
+                try {
+                    db.collection("public_profiles").document(submission.userId).update(
+                        mapOf(
+                            "accountStatus" to "BANNED",
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                } catch (_: Exception) {}
+            }
+
+            db.collection("users").document(submission.userId).update(userUpdates).await()
+
+            val notifTitle = when (newStatus) {
+                "APPROVED" -> "KYC Verification Approved ✓"
+                "REJECTED" -> "KYC Verification Rejected"
+                else -> "Account Suspended by Admin"
+            }
+            val notifMessage = when (newStatus) {
+                "APPROVED" -> "Congratulations! Your identity and face scan have been verified. USDT withdrawals are now unlocked."
+                "REJECTED" -> "Your KYC was rejected: " + reason.ifBlank { "Unclear document or face scan." } + ". You may resubmit."
+                else -> "Your account was banned: " + reason
+            }
+
+            createNotification(
+                recipientUid = submission.userId,
+                title = notifTitle,
+                message = notifMessage,
+                category = "KYC"
+            )
+
+            recordAuditLog(
+                adminUid = adminUid,
+                adminEmail = adminEmail,
+                actionType = "KYC_REVIEW_" + newStatus,
+                targetId = submission.userId,
+                details = "Admin reviewed KYC for @" + submission.username + ": status=" + newStatus + ", reason=" + reason
+            )
+
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }

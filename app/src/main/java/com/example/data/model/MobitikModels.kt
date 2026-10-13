@@ -36,8 +36,17 @@ data class UserProfile(
     val accountStatus: String = "ACTIVE",
     val role: String = "USER",
     val notificationsEnabled: Boolean = true,
-    val themeMode: String = "DARK",
+    val themeMode: String = "LIGHT",
     val language: String = "en",
+    val kycStatus: String = "NONE", // NONE, PENDING, APPROVED, REJECTED, BANNED
+    val kycFullName: String = "",
+    val kycDocumentType: String = "",
+    val kycDocumentNumber: String = "",
+    val kycFaceHash: String = "",
+    val kycRejectionReason: String = "",
+    val isBanned: Boolean = false,
+    val banReason: String = "",
+    @ServerTimestamp val kycSubmittedAt: Timestamp? = null,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
@@ -71,8 +80,71 @@ data class UserProfile(
         "notificationsEnabled" to notificationsEnabled,
         "themeMode" to themeMode,
         "language" to language,
+        "kycStatus" to kycStatus,
+        "kycFullName" to kycFullName,
+        "kycDocumentType" to kycDocumentType,
+        "kycDocumentNumber" to kycDocumentNumber,
+        "kycFaceHash" to kycFaceHash,
+        "kycRejectionReason" to kycRejectionReason,
+        "isBanned" to isBanned,
+        "banReason" to banReason,
         "createdAt" to FieldValue.serverTimestamp(),
         "updatedAt" to FieldValue.serverTimestamp()
+    )
+}
+
+@IgnoreExtraProperties
+data class KycSubmission(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val userEmail: String = "",
+    val username: String = "",
+    val fullName: String = "",
+    val documentType: String = "National ID",
+    val documentNumber: String = "",
+    val faceScanBase64: String = "",
+    val faceHash: String = "",
+    val status: String = "PENDING", // PENDING, APPROVED, REJECTED, BANNED
+    val rejectionReason: String = "",
+    val reviewNotes: String = "",
+    val reviewedBy: String = "",
+    @ServerTimestamp val submittedAt: Timestamp? = null,
+    @ServerTimestamp val reviewedAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun toCreateMap(): Map<String, Any> = mapOf(
+        "userId" to userId,
+        "userEmail" to userEmail,
+        "username" to username,
+        "fullName" to fullName,
+        "documentType" to documentType,
+        "documentNumber" to documentNumber,
+        "faceScanBase64" to faceScanBase64,
+        "faceHash" to faceHash,
+        "status" to status,
+        "rejectionReason" to rejectionReason,
+        "reviewNotes" to reviewNotes,
+        "reviewedBy" to reviewedBy,
+        "submittedAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
+    )
+}
+
+@IgnoreExtraProperties
+data class KycFaceIndex(
+    @DocumentId val id: String = "", // faceHash
+    val faceHash: String = "",
+    val userId: String = "",
+    val userEmail: String = "",
+    val username: String = "",
+    @ServerTimestamp val registeredAt: Timestamp? = null
+) {
+    fun toCreateMap(): Map<String, Any> = mapOf(
+        "faceHash" to faceHash,
+        "userId" to userId,
+        "userEmail" to userEmail,
+        "username" to username,
+        "registeredAt" to FieldValue.serverTimestamp()
     )
 }
 

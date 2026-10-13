@@ -54,10 +54,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -81,6 +85,10 @@ import com.example.data.model.AppConfig
 import com.example.data.model.AuditLog
 import com.example.data.model.FaqEntry
 import com.example.data.model.SupportTicket
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.asImageBitmap
+import com.example.data.model.KycSubmission
 import com.example.data.model.UsdtWithdrawal
 import com.example.data.model.UserProfile
 import com.example.data.remote.BscWeb3Client
@@ -736,6 +744,7 @@ fun AdminConsoleScreen(
     config: AppConfig,
     users: List<UserProfile>,
     withdrawals: List<UsdtWithdrawal>,
+    kycSubmissions: List<KycSubmission> = emptyList(),
     tickets: List<SupportTicket>,
     auditLogs: List<AuditLog>,
     isBusy: Boolean,
@@ -743,7 +752,8 @@ fun AdminConsoleScreen(
     onSaveConfig: (AppConfig, String) -> Unit,
     onReviewWithdrawal: (UsdtWithdrawal, String, String, String) -> Unit,
     onToggleUserStatus: (UserProfile, String, String) -> Unit,
-    onReplyTicket: (SupportTicket, String, String) -> Unit
+    onReplyTicket: (SupportTicket, String, String) -> Unit,
+    onReviewKyc: (KycSubmission, String, String) -> Unit = { _, _, _ -> }
 ) {
     BackHandler { onBack() }
 
@@ -757,8 +767,10 @@ fun AdminConsoleScreen(
         withdrawals.filter { it.status == "PENDING" }.sumOf { it.amountUsdt }
     }
 
+    val pendingKycCount = kycSubmissions.count { it.status == "PENDING" }
     val tabs = listOf(
         "USDT Withdrawals ($pendingWdCount)",
+        "KYC Approvals ($pendingKycCount)",
         "Swap & Fees",
         "Users (${users.size})",
         "Tickets (${tickets.count { it.status == "OPEN" }})",
@@ -870,18 +882,23 @@ fun AdminConsoleScreen(
                     isBusy = isBusy,
                     onReviewWithdrawal = onReviewWithdrawal
                 )
-                1 -> AdminProtocolLiquidityTab(config = config, isBusy = isBusy, onSaveConfig = onSaveConfig)
-                2 -> AdminUsersManagementTab(
+                1 -> AdminKycManagementTab(
+                    kycSubmissions = kycSubmissions,
+                    isBusy = isBusy,
+                    onReviewKyc = onReviewKyc
+                )
+                2 -> AdminProtocolLiquidityTab(config = config, isBusy = isBusy, onSaveConfig = onSaveConfig)
+                3 -> AdminUsersManagementTab(
                     users = users,
                     isBusy = isBusy,
                     onToggleUserStatus = onToggleUserStatus
                 )
-                3 -> AdminSupportTicketsTab(
+                4 -> AdminSupportTicketsTab(
                     tickets = tickets,
                     isBusy = isBusy,
                     onReplyTicket = onReplyTicket
                 )
-                4 -> AdminAuditLogsTab(auditLogs = auditLogs)
+                5 -> AdminAuditLogsTab(auditLogs = auditLogs)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -889,6 +906,251 @@ fun AdminConsoleScreen(
     }
 }
 
+
+@Composable
+private fun AdminKycManagementTab(
+    kycSubmissions: List<KycSubmission>,
+    isBusy: Boolean,
+    onReviewKyc: (KycSubmission, String, String) -> Unit
+) {
+    var statusFilter by remember { mutableStateOf("ALL") }
+    var selectedForReject by remember { mutableStateOf<KycSubmission?>(null) }
+    var rejectReasonInput by remember { mutableStateOf("") }
+
+    val filtered = remember(kycSubmissions, statusFilter) {
+        if (statusFilter == "ALL") kycSubmissions
+        else kycSubmissions.filter { it.status == statusFilter }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("KYC Verification Queue (${filtered.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("ALL", "PENDING", "APPROVED", "REJECTED", "BANNED").forEach { item ->
+                    FilterChip(
+                        selected = statusFilter == item,
+                        onClick = { statusFilter = item },
+                        label = { Text(item, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    )
+                }
+            }
+        }
+
+        if (filtered.isEmpty()) {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(14.dp))
+            ) {
+                Text(
+                    text = "No KYC submissions found matching filter ($statusFilter).",
+                    modifier = Modifier.padding(24.dp),
+                    color = Color(0xFF64748B),
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            filtered.forEach { sub ->
+                val faceBitmap = remember(sub.faceScanBase64) {
+                    try {
+                        if (sub.faceScanBase64.isNotBlank()) {
+                            val bytes = android.util.Base64.decode(sub.faceScanBase64, android.util.Base64.DEFAULT)
+                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                        } else null
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "@${sub.username} (${sub.fullName})",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = Color(0xFF0F172A)
+                                )
+                                Text(
+                                    text = sub.userEmail,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64748B)
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = when (sub.status) {
+                                    "APPROVED" -> MobitikSuccessGreen.copy(alpha = 0.15f)
+                                    "PENDING" -> MobitikWarningAmber.copy(alpha = 0.15f)
+                                    "BANNED" -> MobitikErrorRed.copy(alpha = 0.15f)
+                                    else -> Color(0xFFF1F5F9)
+                                }
+                            ) {
+                                Text(
+                                    text = sub.status,
+                                    color = when (sub.status) {
+                                        "APPROVED" -> MobitikSuccessGreen
+                                        "PENDING" -> Color(0xFFB45309)
+                                        "BANNED" -> MobitikErrorRed
+                                        else -> Color(0xFF64748B)
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        // Face photo and Doc info row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (faceBitmap != null) {
+                                Image(
+                                    bitmap = faceBitmap,
+                                    contentDescription = "Face Scan",
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(12.dp))
+                                )
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color(0xFFF1F5F9),
+                                    modifier = Modifier.size(80.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = Color(0xFF94A3B8))
+                                    }
+                                }
+                            }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "Doc: ${sub.documentType} • ${sub.documentNumber}",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF1E293B)
+                                )
+                                Text(
+                                    text = "Face Hash: ${sub.faceHash.take(16)}...",
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF64748B)
+                                )
+                                if (sub.rejectionReason.isNotBlank()) {
+                                    Text(
+                                        text = "Note: ${sub.rejectionReason}",
+                                        fontSize = 11.sp,
+                                        color = MobitikErrorRed
+                                    )
+                                }
+                            }
+                        }
+
+                        // Action Buttons for PENDING submissions
+                        if (sub.status == "PENDING") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { onReviewKyc(sub, "APPROVED", "") },
+                                    enabled = !isBusy,
+                                    colors = ButtonDefaults.buttonColors(containerColor = MobitikSuccessGreen, contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Approve KYC", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        selectedForReject = sub
+                                        rejectReasonInput = "Document details mismatch or unclear face photo"
+                                    },
+                                    enabled = !isBusy,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Reject", color = MobitikOrange, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        onReviewKyc(sub, "BANNED", "Multi-account fraud violation")
+                                    },
+                                    enabled = !isBusy,
+                                    colors = ButtonDefaults.buttonColors(containerColor = MobitikErrorRed, contentColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(0.9f)
+                                ) {
+                                    Text("Ban User", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (selectedForReject != null) {
+        val targetSub = selectedForReject!!
+        AlertDialog(
+            onDismissRequest = { selectedForReject = null },
+            title = { Text("Reject KYC for @${targetSub.username}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Specify reason for rejecting verification:")
+                    OutlinedTextField(
+                        value = rejectReasonInput,
+                        onValueChange = { rejectReasonInput = it },
+                        label = { Text("Rejection Reason") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onReviewKyc(targetSub, "REJECTED", rejectReasonInput.trim())
+                        selectedForReject = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange, contentColor = Color.White)
+                ) {
+                    Text("Confirm Rejection")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedForReject = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
 @Composable
 private fun AdminProtocolLiquidityTab(
     config: AppConfig,

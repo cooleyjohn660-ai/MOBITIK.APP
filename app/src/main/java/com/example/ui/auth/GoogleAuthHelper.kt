@@ -61,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -228,7 +229,7 @@ fun MobitikSignInScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(MobitikBlack, MobitikCharcoal, MobitikBlack)
+                    colors = listOf(Color(0xFFFFF7ED), Color(0xFFF8FAFC), Color(0xFFFFFFFF))
                 )
             )
             .windowInsetsPadding(WindowInsets.safeDrawing),
@@ -249,7 +250,7 @@ fun MobitikSignInScreen(
                     .clip(CircleShape)
                     .background(
                         Brush.radialGradient(
-                            colors = listOf(MobitikOrange.copy(alpha = 0.45f), MobitikCharcoal)
+                            colors = listOf(MobitikOrange.copy(alpha = 0.25f), Color(0xFFFFF2E5))
                         )
                     )
                     .border(2.dp, MobitikOrange, CircleShape),
@@ -425,7 +426,7 @@ fun MobitikSignInScreen(
                         enabled = !isSigningIn,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MobitikOrange,
-                            contentColor = MobitikBlack
+                            contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
@@ -435,7 +436,7 @@ fun MobitikSignInScreen(
                     ) {
                         if (isSigningIn) {
                             CircularProgressIndicator(
-                                color = MobitikBlack,
+                                color = Color(0xFF0F172A),
                                 strokeWidth = 2.dp,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -639,7 +640,7 @@ fun PioneerOnboardingRegistrationScreen(
                         enabled = !isSubmitting && fullName.trim().length >= 2 && username.trim().length >= 3,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MobitikOrange,
-                            contentColor = MobitikBlack
+                            contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier

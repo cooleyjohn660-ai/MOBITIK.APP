@@ -32,6 +32,21 @@ abstract class FirestoreEmulatorTestBase {
     @Before
     open fun setUpFirebase() {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val isAuthRunning = try {
+            java.net.Socket(EMULATOR_HOST, AUTH_PORT).use { true }
+        } catch (_: Exception) {
+            false
+        }
+        val isFirestoreRunning = try {
+            java.net.Socket(EMULATOR_HOST, FIRESTORE_PORT).use { true }
+        } catch (_: Exception) {
+            false
+        }
+        org.junit.Assume.assumeTrue(
+            "Firebase emulators not reachable on $EMULATOR_HOST (ports $AUTH_PORT, $FIRESTORE_PORT). Skipping emulator-backed tests.",
+            isAuthRunning && isFirestoreRunning
+        )
+
         val resId = context.resources.getIdentifier("firestore_database_id", "string", context.packageName)
         databaseId = if (resId != 0) context.getString(resId) else "demo-database"
 
@@ -70,7 +85,7 @@ abstract class FirestoreEmulatorTestBase {
         withTimeout(AUTH_TIMEOUT_MS) {
             val result = try {
                 auth.signInWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
-            } catch (unused: FirebaseAuthInvalidUserException) {
+            } catch (_: Exception) {
                 auth.createUserWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
             }
             checkNotNull(result.user?.uid) { "User auth failed" }

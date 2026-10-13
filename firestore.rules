@@ -45,6 +45,8 @@ service cloud.firestore {
                'totalMiningRewards', 'completedSessions', 'totalReferrals', 'activeReferrals',
                'referralRewards', 'autoStartMining', 'twoFactorEnabled', 'pinHash',
                'accountStatus', 'role', 'notificationsEnabled', 'themeMode', 'language',
+               'kycStatus', 'kycFullName', 'kycDocumentType', 'kycDocumentNumber',
+               'kycFaceHash', 'kycRejectionReason', 'isBanned', 'banReason', 'kycSubmittedAt',
                'createdAt', 'updatedAt'
              ]) &&
              data.keys().hasOnly([
@@ -81,7 +83,7 @@ service cloud.firestore {
              data.autoStartMining is bool &&
              data.twoFactorEnabled is bool &&
              data.pinHash is string && data.pinHash.size() <= 128 &&
-             data.accountStatus in ['ACTIVE', 'SUSPENDED'] &&
+             data.accountStatus in ['ACTIVE', 'SUSPENDED', 'BANNED'] &&
              data.role in ['USER', 'ADMIN'] &&
              data.notificationsEnabled is bool &&
              data.themeMode in ['DARK', 'LIGHT', 'SYSTEM'] &&
@@ -109,9 +111,21 @@ service cloud.firestore {
              data.totalReferrals is int && data.totalReferrals >= 0 &&
              data.activeReferrals is int && data.activeReferrals >= 0 &&
              data.completedSessions is int && data.completedSessions >= 0 &&
-             data.accountStatus in ['ACTIVE', 'SUSPENDED'] &&
+             data.accountStatus in ['ACTIVE', 'SUSPENDED', 'BANNED'] &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidKycSubmission(data) {
+      return data.keys().hasAll([
+               'userId', 'userEmail', 'username', 'fullName', 'documentType',
+               'documentNumber', 'faceScanBase64', 'faceHash', 'status',
+               'rejectionReason', 'reviewNotes', 'reviewedBy', 'submittedAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId.size() >= 1 &&
+             data.username is string &&
+             data.fullName is string &&
+             data.status in ['PENDING', 'APPROVED', 'REJECTED', 'BANNED'];
     }
 
     function isValidMiningSession(data) {
@@ -362,8 +376,12 @@ service cloud.firestore {
                             'totalMiningRewards', 'completedSessions', 'totalReferrals',
                             'activeReferrals', 'referralRewards', 'autoStartMining',
                             'twoFactorEnabled', 'pinHash', 'notificationsEnabled',
-                            'themeMode', 'language', 'updatedAt'
+                            'themeMode', 'language', 'kycStatus', 'kycFullName', 'kycDocumentType', 'kycDocumentNumber', 'kycFaceHash', 'kycRejectionReason', 'isBanned', 'banReason', 'kycSubmittedAt', 'updatedAt'
                           ])) ||
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['totalBalance', 'availableBalance', 'updatedAt']) &&
+                          incoming().totalBalance > existing().totalBalance &&
+                          incoming().availableBalance > existing().availableBalance &&
+                          incoming().totalBalance - existing().totalBalance == incoming().availableBalance - existing().availableBalance) ||
                          isAdmin()
                        );
 
@@ -546,6 +564,19 @@ service cloud.firestore {
                        );
 
       allow delete: if isAdmin() && isValidId(ticketId);
+    }
+
+    match /kyc_submissions/{subId} {
+      allow get, list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(subId) && (incoming().userId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && isValidId(subId) && (isAdmin() || (incoming().userId == request.auth.uid && existing().userId == request.auth.uid));
+      allow delete: if isAdmin() && isValidId(subId);
+    }
+
+    match /kyc_face_index/{faceHash} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
     }
 
     match /app_config/{configId} {

@@ -7,6 +7,8 @@ import com.example.data.model.AppConfig
 import com.example.data.model.AppNotification
 import com.example.data.model.AuditLog
 import com.example.data.model.FaqEntry
+import android.graphics.Bitmap
+import com.example.data.model.KycSubmission
 import com.example.data.model.MiningSession
 import com.example.data.model.OnChainWalletBalance
 import com.example.data.model.PublicProfile
@@ -108,6 +110,13 @@ class MobitikViewModel(
     val leaderboard: StateFlow<List<PublicProfile>> = repository.observeLeaderboard()
         .catch { e ->
             Log.w(TAG, "Error observing leaderboard", e)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val kycSubmissions: StateFlow<List<KycSubmission>> = repository.observeKycSubmissions()
+        .catch { e ->
+            Log.w(TAG, "Error observing kycSubmissions", e)
             emit(emptyList())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -648,6 +657,104 @@ class MobitikViewModel(
                 _snackbarMessage.value = err.localizedMessage ?: "Failed to reply to ticket."
             }
         }
+    }
+
+    fun onSubmitKycVerification(
+        fullName: String,
+        documentType: String,
+        documentNumber: String,
+        faceBitmap: Bitmap,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        val profile = _userProfile.value ?: run {
+            onResult(false, "User session not found.")
+            return
+        }
+        viewModelScope.launch {
+            _isBusy.value = true
+            try {
+                val faceHash = computeFaceBiometricHash(faceBitmap)
+                val base64 = bitmapToBase64(faceBitmap)
+                val res = repository.submitKycVerification(
+                    user = profile,
+                    fullName = fullName,
+                    documentType = documentType,
+                    documentNumber = documentNumber,
+                    faceScanBase64 = base64,
+                    faceHash = faceHash
+                )
+                _isBusy.value = false
+                res.onSuccess {
+                    _snackbarMessage.value = "KYC submitted! Awaiting Admin approval."
+                    onResult(true, "KYC Submitted successfully. Pending Admin verification.")
+                }.onFailure { err ->
+                    _snackbarMessage.value = err.localizedMessage ?: "KYC verification error."
+                    onResult(false, err.localizedMessage ?: "KYC verification failed.")
+                }
+            } catch (e: Exception) {
+                _isBusy.value = false
+                _snackbarMessage.value = e.localizedMessage ?: "KYC error."
+                onResult(false, e.localizedMessage ?: "Failed to process face scan.")
+            }
+        }
+    }
+
+    fun onAdminReviewKyc(submission: KycSubmission, newStatus: String, reason: String) {
+        if (!isAdminUser) return
+        viewModelScope.launch {
+            _isBusy.value = true
+            val result = repository.adminReviewKyc(currentUserEmail, submission, newStatus, reason)
+            _isBusy.value = false
+            result.onSuccess {
+                _snackbarMessage.value = "KYC for @" + submission.username + " set to " + newStatus + "."
+            }.onFailure { err ->
+                _snackbarMessage.value = err.localizedMessage ?: "Failed to update KYC."
+            }
+        }
+    }
+
+    private fun computeFaceBiometricHash(bitmap: Bitmap): String {
+        val scaled = Bitmap.createScaledBitmap(bitmap, 32, 32, true)
+        var sumLuma = 0L
+        val lumas = IntArray(32 * 32)
+        for (y in 0 until 32) {
+            for (x in 0 until 32) {
+                val pixel = scaled.getPixel(x, y)
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                val luma = (r * 299 + g * 587 + b * 114) / 1000
+                lumas[y * 32 + x] = luma
+                sumLuma += luma
+            }
+        }
+        val avgLuma = (sumLuma / 1024).toInt()
+        val sb = StringBuilder()
+        var currentByte = 0
+        var bitCount = 0
+        for (i in 0 until 1024) {
+            val bit = if (lumas[i] >= avgLuma) 1 else 0
+            currentByte = (currentByte shl 1) or bit
+            bitCount++
+            if (bitCount == 8) {
+                sb.append(String.format("%02x", currentByte))
+                currentByte = 0
+                bitCount = 0
+            }
+        }
+        return sb.toString()
+    }
+
+    private fun bitmapToBase64(bitmap: Bitmap): String {
+        val maxDim = 320
+        val scale = (maxDim.toFloat() / maxOf(bitmap.width, bitmap.height)).coerceAtMost(1f)
+        val scaled = if (scale < 1f) {
+            Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
+        } else bitmap
+        val stream = java.io.ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, 75, stream)
+        val byteArray = stream.toByteArray()
+        return android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
     }
 
     private companion object {

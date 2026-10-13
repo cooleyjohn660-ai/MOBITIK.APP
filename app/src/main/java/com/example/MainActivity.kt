@@ -110,6 +110,7 @@ import com.example.ui.auth.PioneerOnboardingRegistrationScreen
 import com.example.ui.auth.signOutMobitik
 import com.example.ui.components.NotificationsBottomSheet
 import com.example.ui.components.TermsOfServiceDialog
+import com.example.ui.screens.BannedAccountScreen
 import com.example.ui.screens.AdminConsoleScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.HomeMiningScreen
@@ -186,7 +187,7 @@ fun MobitikRootApp() {
     val isAuthenticated = currentUser != null || !sessionEmail.isNullOrBlank()
 
     if (!isAuthenticated) {
-        MyApplicationTheme(themeMode = "DARK") {
+        MyApplicationTheme(themeMode = "LIGHT") {
             MobitikSignInScreen(
                 onAuthSuccess = {
                     currentUser = auth.currentUser
@@ -251,7 +252,7 @@ fun MobitikRootApp() {
 
         val userProfile by viewModel.userProfile.collectAsStateWithLifecycle()
 
-        MyApplicationTheme(themeMode = userProfile?.themeMode ?: "DARK") {
+        MyApplicationTheme(themeMode = userProfile?.themeMode ?: "LIGHT") {
             MobitikAuthenticatedScaffold(
                 viewModel = viewModel,
                 onSignOut = {
@@ -303,6 +304,7 @@ fun MobitikAuthenticatedScaffold(
     val adminWithdrawals by viewModel.adminWithdrawals.collectAsStateWithLifecycle()
     val adminTickets by viewModel.adminTickets.collectAsStateWithLifecycle()
     val adminAuditLogs by viewModel.adminAuditLogs.collectAsStateWithLifecycle()
+    val adminKycSubmissions by viewModel.kycSubmissions.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -400,6 +402,14 @@ fun MobitikAuthenticatedScaffold(
 
         is ProfileGateState.Ready -> {
             val activeProfile = userProfile ?: gate.profile
+
+            if (activeProfile.isBanned || activeProfile.accountStatus == "BANNED") {
+                BannedAccountScreen(
+                    user = activeProfile,
+                    onSignOut = onSignOut
+                )
+                return
+            }
 
             // Left 3-Bar Menu Items matching Screenshot 2
             val drawerMenuItems = buildList {
@@ -727,6 +737,7 @@ fun MobitikAuthenticatedScaffold(
                                         config = appConfig,
                                         users = adminUsers,
                                         withdrawals = adminWithdrawals,
+                                        kycSubmissions = adminKycSubmissions,
                                         tickets = adminTickets,
                                         auditLogs = adminAuditLogs,
                                         isBusy = isBusy,
@@ -740,6 +751,9 @@ fun MobitikAuthenticatedScaffold(
                                         },
                                         onReplyTicket = { ticket, reply, status ->
                                             viewModel.onAdminReplyTicket(ticket, reply, status)
+                                        },
+                                        onReviewKyc = { sub, status, reason ->
+                                            viewModel.onAdminReviewKyc(sub, status, reason)
                                         }
                                     )
                                 } else {
@@ -754,7 +768,6 @@ fun MobitikAuthenticatedScaffold(
                                             isBusy = isBusy,
                                             onStartMining = { viewModel.onStartMiningClicked() },
                                             onClaimReward = { viewModel.onClaimMiningRewardClicked() },
-                                            onRewardedAdBoost = { viewModel.onRewardedAdBoostClaimed() },
                                             onOpenNotifications = { showNotificationsSheet = true },
                                             onNavigateToWalletTab = { subTab ->
                                                 walletInitialTab = subTab
@@ -804,7 +817,10 @@ fun MobitikAuthenticatedScaffold(
                                             onCancelWithdrawal = { wd ->
                                                 viewModel.onCancelWithdrawal(wd)
                                             },
-                                            onShowMessage = { msg -> viewModel.showMessage(msg) }
+                                            onShowMessage = { msg -> viewModel.showMessage(msg) },
+                                            onSubmitKyc = { fullName, docType, docNum, bmp, onDone ->
+                                                viewModel.onSubmitKycVerification(fullName, docType, docNum, bmp, onDone)
+                                            }
                                         )
 
                                         MobitikNavDestination.PROFILE -> {
