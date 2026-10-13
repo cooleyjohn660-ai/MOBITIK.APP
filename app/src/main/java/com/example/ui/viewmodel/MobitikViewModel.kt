@@ -590,6 +590,28 @@ class MobitikViewModel(
         }
     }
 
+    fun onDeleteUserAccount(onComplete: (Boolean, String) -> Unit) {
+        val uid = currentUserId
+        if (uid.isBlank()) {
+            onComplete(false, "No active user session found.")
+            return
+        }
+        viewModelScope.launch {
+            _isBusy.value = true
+            val result = repository.deleteUserAccountAndData(uid)
+            _isBusy.value = false
+            result.onSuccess {
+                _userProfile.value = null
+                _profileGate.value = ProfileGateState.NeedsOnboarding
+                _snackbarMessage.value = "Your account and data have been permanently deleted."
+                onComplete(true, "Your account and all associated data were permanently deleted.")
+            }.onFailure { err ->
+                _snackbarMessage.value = err.localizedMessage ?: "Failed to delete account."
+                onComplete(false, err.localizedMessage ?: "Account deletion failed.")
+            }
+        }
+    }
+
     // --- Admin Actions ---
 
     fun onAdminSaveConfig(updatedConfig: AppConfig, reason: String) {

@@ -283,8 +283,10 @@ fun WalletSwapWithdrawScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        val effectiveAvailable = if (user.availableBalance > 0.0) user.availableBalance else (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0)
+                        val swapRate = if (config.swapRateUsdt > 0.0) config.swapRateUsdt else 0.15
                         Text(
-                            text = if (hideBalance) "•••• MBTK" else "${"%.2f".format(user.availableBalance)} MBTK",
+                            text = if (hideBalance) "•••• MBTK" else "${"%.2f".format(effectiveAvailable)} MBTK",
                             color = Color(0xFF0F172A),
                             fontSize = 32.sp,
                             fontWeight = FontWeight.ExtraBold,
@@ -295,7 +297,7 @@ fun WalletSwapWithdrawScreen(
                             text = if (hideBalance) {
                                 "•••• USDT"
                             } else {
-                                "${"%.2f".format(user.usdtBalance)} USDT  •  ≈ $${"%.2f".format(user.availableBalance * config.swapRateUsdt + user.usdtBalance)}"
+                                "${"%.2f".format(user.usdtBalance)} USDT  •  ≈ $${"%.2f".format(effectiveAvailable * swapRate + user.usdtBalance)}"
                             },
                             color = MobitikOrange,
                             style = MaterialTheme.typography.labelLarge,
@@ -945,7 +947,8 @@ private fun CompactSendPanel(
     val isUsernameFormat = trimmedRecipient.removePrefix("@").matches(Regex("^[a-zA-Z0-9_]{3,30}$"))
     val validRecipient = isMbtkFormat || isUsernameFormat
 
-    val hasSufficientBalance = amount > 0.0 && amount <= user.availableBalance
+    val currentAvailable = if (user.availableBalance > 0.0) user.availableBalance else (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0)
+    val hasSufficientBalance = amount > 0.0 && amount <= currentAvailable
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -966,12 +969,28 @@ private fun CompactSendPanel(
                 Column {
                     Text("Send MOBITIK (App-to-App Instant)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
                     Text(
-                        text = "Instant transfer to any pioneer via @username or MBTK- address",
+                        text = "Instant transfer to any pioneer via @username or MBTK- address • 0 Fee",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFF64748B)
                     )
                 }
                 TextButton(onClick = onClose) { Text("Close") }
+            }
+
+            if (currentAvailable <= 0.0) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFFEF3C7),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Your available balance is currently 0.0000 MBTK. Tap Start Mining on the Home screen to earn free MBTK tokens before sending.",
+                        color = Color(0xFF92400E),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
             }
 
             OutlinedTextField(
@@ -993,10 +1012,10 @@ private fun CompactSendPanel(
             OutlinedTextField(
                 value = amountStr,
                 onValueChange = { amountStr = it },
-                label = { Text("Amount (MBTK) • Available: " + "%.4f".format(user.availableBalance) + " MBTK") },
+                label = { Text("Amount (MBTK) • Available: " + "%.4f".format(currentAvailable) + " MBTK") },
                 trailingIcon = {
                     TextButton(onClick = {
-                        amountStr = "%.4f".format(user.availableBalance)
+                        amountStr = "%.4f".format(currentAvailable)
                     }) {
                         Text("MAX", color = MobitikOrange, fontWeight = FontWeight.Bold)
                     }
@@ -1068,6 +1087,10 @@ private fun CompactSwapPanel(
     val feeUsdt = grossUsdt * (config.swapFeePercent / 100.0)
     val netUsdt = (grossUsdt - feeUsdt).coerceAtLeast(0.0)
 
+    val currentAvailable = if (user.availableBalance > 0.0) user.availableBalance else (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0)
+    val isSwapActive = config.swapEnabled || config.swapRateUsdt > 0.0
+    val canSwap = !isBusy && isSwapActive && mbtkAmount > 0.0 && mbtkAmount <= currentAvailable
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1087,12 +1110,28 @@ private fun CompactSwapPanel(
                 Column {
                     Text("Swap MBTK → USDT", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        text = "1 MBTK = ${"%.2f".format(config.swapRateUsdt)} USDT",
+                        text = "1 MBTK = ${"%.2f".format(if (config.swapRateUsdt > 0.0) config.swapRateUsdt else 0.15)} USDT",
                         style = MaterialTheme.typography.labelSmall,
                         color = MobitikGold
                     )
                 }
                 TextButton(onClick = onClose) { Text("Close") }
+            }
+
+            if (currentAvailable <= 0.0) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFFEF3C7),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Your available balance is currently 0.0000 MBTK. Start a 12-hour mining session on the Home screen to earn MBTK tokens first.",
+                        color = Color(0xFF92400E),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
             }
 
             // Quick Preset Chips: 1, 10, 100, 1000 MBTK
@@ -1113,9 +1152,9 @@ private fun CompactSwapPanel(
             OutlinedTextField(
                 value = mbtkStr,
                 onValueChange = { mbtkStr = it },
-                label = { Text("MBTK Amount (Max ${"%.2f".format(user.availableBalance)})") },
+                label = { Text("MBTK Amount (Max ${"%.4f".format(currentAvailable)})") },
                 trailingIcon = {
-                    TextButton(onClick = { mbtkStr = "%.4f".format(user.availableBalance) }) {
+                    TextButton(onClick = { mbtkStr = "%.4f".format(currentAvailable) }) {
                         Text("MAX", color = MobitikOrange, fontWeight = FontWeight.Bold)
                     }
                 },
@@ -1143,7 +1182,7 @@ private fun CompactSwapPanel(
 
             Button(
                 onClick = { showConfirm = true },
-                enabled = !isBusy && config.swapEnabled && mbtkAmount > 0.0 && mbtkAmount <= user.availableBalance,
+                enabled = canSwap,
                 colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange, contentColor = MobitikBlack),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier

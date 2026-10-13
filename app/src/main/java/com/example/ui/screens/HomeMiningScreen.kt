@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,9 +91,13 @@ import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
+import com.google.android.gms.ads.rewardedinterstitial.RewardedInterstitialAd
+import com.google.android.gms.ads.rewardedinterstitial.RewardedInterstitialAdLoadCallback
 import kotlinx.coroutines.delay
 
-const val MOBITIK_REWARDED_AD_UNIT_ID = "ca-app-pub-3940256099942544/5224354917"
+// Real AdMob Rewarded Interstitial Ad Unit from User's AdMob Console
+const val MOBITIK_REWARDED_AD_UNIT_ID = "ca-app-pub-7750958842878506/4746452763"
+const val MOBITIK_TEST_REWARDED_AD_UNIT_ID = "ca-app-pub-3940256099942544/5354046379"
 
 private fun Context.findActivity(): Activity? {
     var ctx: Context = this
@@ -121,46 +126,71 @@ fun HomeMiningScreen(
     onNavigateToWhitepaper: () -> Unit
 ) {
     val context = LocalContext.current
+    var loadedRewardedInterstitialAd by remember { mutableStateOf<RewardedInterstitialAd?>(null) }
     var loadedRewardedAd by remember { mutableStateOf<RewardedAd?>(null) }
     var isAdLoading by remember { mutableStateOf(false) }
     var pendingRewardedAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingRewardLabel by remember { mutableStateOf("+0.22 MBTK") }
 
-    fun loadAdMobRewardedAd() {
-        if (isAdLoading || loadedRewardedAd != null) return
-        try {
-            isAdLoading = true
-            val adRequest = AdRequest.Builder().build()
-            RewardedAd.load(
-                context,
-                MOBITIK_REWARDED_AD_UNIT_ID,
-                adRequest,
-                object : RewardedAdLoadCallback() {
-                    override fun onAdLoaded(ad: RewardedAd) {
-                        isAdLoading = false
-                        loadedRewardedAd = ad
-                        Log.d("AdMobRewarded", "Test RewardedAd loaded: $MOBITIK_REWARDED_AD_UNIT_ID")
-                    }
+    fun loadAdMobAds() {
+        if (isAdLoading || loadedRewardedInterstitialAd != null || loadedRewardedAd != null) return
+        isAdLoading = true
+        val adRequest = AdRequest.Builder().build()
 
-                    override fun onAdFailedToLoad(loadAdError: LoadAdError) {
-                        isAdLoading = false
-                        loadedRewardedAd = null
-                        Log.w("AdMobRewarded", "Test RewardedAd failed to load: ${loadAdError.message}")
-                    }
+        // 1. Load Rewarded Interstitial Ad (primary real ad unit)
+        RewardedInterstitialAd.load(
+            context,
+            MOBITIK_REWARDED_AD_UNIT_ID,
+            adRequest,
+            object : RewardedInterstitialAdLoadCallback() {
+                override fun onAdLoaded(ad: RewardedInterstitialAd) {
+                    isAdLoading = false
+                    loadedRewardedInterstitialAd = ad
+                    Log.d("AdMob", "Real RewardedInterstitialAd loaded: $MOBITIK_REWARDED_AD_UNIT_ID")
                 }
-            )
-        } catch (e: Exception) {
-            isAdLoading = false
-            loadedRewardedAd = null
-        }
+
+                override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                    Log.w("AdMob", "Real RewardedInterstitialAd failed: ${loadAdError.message}. Trying RewardedAd format...")
+                    // 2. Fallback to RewardedAd format with real ID or test ID
+                    RewardedAd.load(
+                        context,
+                        MOBITIK_REWARDED_AD_UNIT_ID,
+                        adRequest,
+                        object : RewardedAdLoadCallback() {
+                            override fun onAdLoaded(ad: RewardedAd) {
+                                isAdLoading = false
+                                loadedRewardedAd = ad
+                                Log.d("AdMob", "RewardedAd loaded: $MOBITIK_REWARDED_AD_UNIT_ID")
+                            }
+
+                            override fun onAdFailedToLoad(err: LoadAdError) {
+                                Log.w("AdMob", "RewardedAd also failed: ${err.message}. Loading test fallback...")
+                                // 3. Fallback to test unit for seamless local testing
+                                RewardedAd.load(
+                                    context,
+                                    MOBITIK_TEST_REWARDED_AD_UNIT_ID,
+                                    adRequest,
+                                    object : RewardedAdLoadCallback() {
+                                        override fun onAdLoaded(testAd: RewardedAd) {
+                                            isAdLoading = false
+                                            loadedRewardedAd = testAd
+                                        }
+
+                                        override fun onAdFailedToLoad(testErr: LoadAdError) {
+                                            isAdLoading = false
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        )
     }
 
     LaunchedEffect(Unit) {
-        try {
-            MobileAds.initialize(context) {}
-        } catch (_: Exception) {
-        }
-        loadAdMobRewardedAd()
+        loadAdMobAds()
     }
 
     val triggerMiningWithAd: () -> Unit = {
@@ -176,13 +206,36 @@ fun HomeMiningScreen(
             }
 
             val activity = context.findActivity()
-            val currentAd = loadedRewardedAd
-            if (currentAd != null && activity != null) {
+            val interstitial = loadedRewardedInterstitialAd
+            val rewarded = loadedRewardedAd
+
+            if (interstitial != null && activity != null) {
                 var rewardEarned = false
-                currentAd.fullScreenContentCallback = object : FullScreenContentCallback() {
+                interstitial.fullScreenContentCallback = object : FullScreenContentCallback() {
+                    override fun onAdDismissedFullScreenContent() {
+                        loadedRewardedInterstitialAd = null
+                        loadAdMobAds()
+                        if (rewardEarned) {
+                            targetAction.invoke()
+                        }
+                    }
+
+                    override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                        loadedRewardedInterstitialAd = null
+                        loadAdMobAds()
+                        pendingRewardLabel = rewardLabel
+                        pendingRewardedAction = targetAction
+                    }
+                }
+                interstitial.show(activity) {
+                    rewardEarned = true
+                }
+            } else if (rewarded != null && activity != null) {
+                var rewardEarned = false
+                rewarded.fullScreenContentCallback = object : FullScreenContentCallback() {
                     override fun onAdDismissedFullScreenContent() {
                         loadedRewardedAd = null
-                        loadAdMobRewardedAd()
+                        loadAdMobAds()
                         if (rewardEarned) {
                             targetAction.invoke()
                         }
@@ -190,16 +243,16 @@ fun HomeMiningScreen(
 
                     override fun onAdFailedToShowFullScreenContent(adError: AdError) {
                         loadedRewardedAd = null
-                        loadAdMobRewardedAd()
+                        loadAdMobAds()
                         pendingRewardLabel = rewardLabel
                         pendingRewardedAction = targetAction
                     }
                 }
-                currentAd.show(activity) {
+                rewarded.show(activity) {
                     rewardEarned = true
                 }
             } else {
-                loadAdMobRewardedAd()
+                loadAdMobAds()
                 pendingRewardLabel = rewardLabel
                 pendingRewardedAction = targetAction
             }

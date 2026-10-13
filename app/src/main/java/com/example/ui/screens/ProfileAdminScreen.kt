@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -45,6 +46,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -128,7 +130,8 @@ fun ProfileSettingsScreen(
     ) -> Unit,
     onSubmitTicket: (subject: String, message: String, onSuccess: (String) -> Unit) -> Unit,
     onSignOut: () -> Unit,
-    onShowMessage: (String) -> Unit
+    onShowMessage: (String) -> Unit,
+    onDeleteAccount: ((Boolean, String) -> Unit) -> Unit = { _ -> }
 ) {
     val clipboard = LocalClipboardManager.current
     var selectedSection by rememberSaveable(initialSection) { mutableIntStateOf(initialSection.coerceIn(0, 4)) }
@@ -271,7 +274,8 @@ fun ProfileSettingsScreen(
                     user = user,
                     isBusy = isBusy,
                     onSavePreferences = onSavePreferences,
-                    onSignOut = onSignOut
+                    onSignOut = onSignOut,
+                    onDeleteAccount = onDeleteAccount
                 )
                 1 -> WhitepaperSubTab(config = config)
                 2 -> FaqSubTab(faqs = faqs)
@@ -303,7 +307,8 @@ private fun AccountSecuritySettingsSubTab(
         twoFactorEnabled: Boolean,
         newPinCode: String
     ) -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    onDeleteAccount: ((Boolean, String) -> Unit) -> Unit = { _ -> }
 ) {
     var displayName by remember(user.name) { mutableStateOf(user.name) }
     var autoStartMining by remember(user.autoStartMining) { mutableStateOf(user.autoStartMining) }
@@ -312,6 +317,7 @@ private fun AccountSecuritySettingsSubTab(
     var language by remember(user.language) { mutableStateOf(user.language) }
     var twoFactorEnabled by remember(user.twoFactorEnabled) { mutableStateOf(user.twoFactorEnabled) }
     var newPinCode by remember { mutableStateOf("") }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     Card(
         shape = RoundedCornerShape(18.dp),
@@ -466,7 +472,134 @@ private fun AccountSecuritySettingsSubTab(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Sign Out of MOBITIK")
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Google Play Policy Compliant Account & Data Deletion
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, Color(0xFFFCA5A5), RoundedCornerShape(16.dp))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteForever,
+                            contentDescription = null,
+                            tint = MobitikErrorRed
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Delete Account & Data",
+                            fontWeight = FontWeight.Bold,
+                            color = MobitikErrorRed,
+                            fontSize = 15.sp
+                        )
+                    }
+                    Text(
+                        text = "Permanently erase your MOBITIK account, identity credentials, KYC biometric data, and internal ledger records from all servers. This action cannot be undone.",
+                        fontSize = 12.sp,
+                        color = Color(0xFF7F1D1D),
+                        lineHeight = 16.sp
+                    )
+                    Button(
+                        onClick = { showDeleteConfirmDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MobitikErrorRed,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("delete_account_open_dialog_button")
+                    ) {
+                        Text("Delete My Account & All Data", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
+    }
+
+    if (showDeleteConfirmDialog) {
+        var confirmText by remember { mutableStateOf("") }
+        var isDeleting by remember { mutableStateOf(false) }
+        var deleteError by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { if (!isDeleting) showDeleteConfirmDialog = false },
+            icon = {
+                Icon(Icons.Default.DeleteForever, contentDescription = null, tint = MobitikErrorRed)
+            },
+            title = {
+                Text("Confirm Account Deletion", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Are you sure you want to permanently delete your MOBITIK account? All your token balances, mining session history, KYC submissions, and credentials will be deleted immediately and cannot be recovered.",
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        "Type DELETE below to confirm:",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = MobitikErrorRed
+                    )
+                    OutlinedTextField(
+                        value = confirmText,
+                        onValueChange = { confirmText = it.trim().uppercase() },
+                        placeholder = { Text("DELETE") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("delete_account_confirmation_input")
+                    )
+                    if (deleteError != null) {
+                        Text(deleteError!!, color = MobitikErrorRed, fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isDeleting = true
+                        deleteError = null
+                        onDeleteAccount { success, msg ->
+                            isDeleting = false
+                            if (success) {
+                                showDeleteConfirmDialog = false
+                            } else {
+                                deleteError = msg
+                            }
+                        }
+                    },
+                    enabled = confirmText == "DELETE" && !isDeleting,
+                    colors = ButtonDefaults.buttonColors(containerColor = MobitikErrorRed, contentColor = Color.White),
+                    modifier = Modifier.testTag("confirm_delete_account_final_button")
+                ) {
+                    if (isDeleting) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Deleting...")
+                    } else {
+                        Text("Permanently Delete", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirmDialog = false },
+                    enabled = !isDeleting
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

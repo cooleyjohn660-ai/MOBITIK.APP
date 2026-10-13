@@ -124,12 +124,14 @@ import com.example.ui.theme.MobitikOrange
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MobitikViewModel
 import com.example.ui.viewmodel.ProfileGateState
+import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.ads.MobileAds
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 enum class MobitikNavDestination(val label: String, val icon: ImageVector, val tag: String) {
@@ -148,9 +150,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        try {
-            MobileAds.initialize(this) {}
-        } catch (_: Exception) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                MobileAds.initialize(applicationContext) {}
+            } catch (_: Exception) {
+            }
         }
         setContent {
             MobitikRootApp()
@@ -879,7 +883,15 @@ fun MobitikAuthenticatedScaffold(
                                                                 viewModel.onSubmitSupportTicket(subj, msg, onDone)
                                                             },
                                                             onSignOut = onSignOut,
-                                                            onShowMessage = { msg -> viewModel.showMessage(msg) }
+                                                            onShowMessage = { msg -> viewModel.showMessage(msg) },
+                                                            onDeleteAccount = { onDone ->
+                                                                viewModel.onDeleteUserAccount { success, msg ->
+                                                                    if (success) {
+                                                                        onSignOut()
+                                                                    }
+                                                                    onDone(success, msg)
+                                                                }
+                                                            }
                                                         )
 
                                                         1 -> ReferralsScreen(
