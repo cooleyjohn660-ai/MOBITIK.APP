@@ -125,7 +125,9 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MobitikViewModel
 import com.example.ui.viewmodel.ProfileGateState
 import androidx.lifecycle.lifecycleScope
+import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.RequestConfiguration
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -147,13 +149,33 @@ private data class DrawerMenuItem(
 )
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        init {
+            try {
+                // Ensure Mesa software rendering fallback handles emulator environments without DRM node
+                android.system.Os.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true)
+                android.system.Os.setenv("MESA_LOADER_DRIVER_OVERRIDE", "swrast", true)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                MobileAds.initialize(applicationContext) {}
-            } catch (_: Exception) {
+                val config = RequestConfiguration.Builder()
+                    .setTestDeviceIds(listOf(AdRequest.DEVICE_ID_EMULATOR))
+                    .build()
+                MobileAds.setRequestConfiguration(config)
+
+                MobileAds.initialize(this@MainActivity) { status ->
+                    android.util.Log.d("AdMob", "MobileAds initialized in background: $status")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("AdMob", "MobileAds init exception: ${e.message}")
             }
         }
         setContent {
@@ -789,6 +811,9 @@ fun MobitikAuthenticatedScaffold(
                                                 accountSubTab = 0
                                                 profileInitialSection = 1
                                                 currentTab = MobitikNavDestination.PROFILE
+                                            },
+                                            onRewardedAdBoostClaimed = {
+                                                viewModel.onRewardedAdBoostClaimed()
                                             }
                                         )
 
@@ -800,9 +825,6 @@ fun MobitikAuthenticatedScaffold(
                                             onChainBalance = onChainBalance,
                                             initialSubTab = walletInitialTab,
                                             isBusy = isBusy,
-                                            onSendMobitik = { addr, amt, note, pin, onDone ->
-                                                viewModel.onSendMobitik(addr, amt, note, pin, onDone)
-                                            },
                                             onSwapMbtkToUsdt = { amt, pin, onDone ->
                                                 viewModel.onSwapMbtkToUsdt(amt, pin, onDone)
                                             },

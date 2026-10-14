@@ -411,15 +411,9 @@ fun MobitikSignInScreen(
                                     isSigningIn = false
                                     onAuthSuccess()
                                 } catch (e: Exception) {
-                                    // Smooth session fallback if Firebase Email/Password provider is not enabled
                                     isSigningIn = false
-                                    val fallbackName = fullNameInput.trim().ifBlank {
-                                        cleanEmail.substringBefore("@").replaceFirstChar { it.uppercase() }
-                                    }
-                                    val fallbackUsername = usernameInput.trim().ifBlank {
-                                        cleanEmail.substringBefore("@").lowercase().replace(Regex("[^a-z0-9_]"), "")
-                                    }
-                                    onEmailSessionAuth(cleanEmail, fallbackName, fallbackUsername)
+                                    Log.e("Auth", "Email auth failed", e)
+                                    errorMessage = e.localizedMessage ?: "Authentication failed. Please check credentials or Continue with Google."
                                 }
                             }
                         },

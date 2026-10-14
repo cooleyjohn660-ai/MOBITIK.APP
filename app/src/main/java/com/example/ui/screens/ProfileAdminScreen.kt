@@ -1530,6 +1530,9 @@ private fun AdminWithdrawalsQueueTab(
     var onChainVerifyStatus by remember { mutableStateOf<String?>(null) }
     var isVerifyingHash by remember { mutableStateOf(false) }
 
+    val clipboard = LocalClipboardManager.current
+    var copiedAddressId by remember { mutableStateOf<String?>(null) }
+
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("External BEP-20 USDT Withdrawal Queue", style = MaterialTheme.typography.titleLarge)
         if (withdrawals.isEmpty()) {
@@ -1565,12 +1568,51 @@ private fun AdminWithdrawalsQueueTab(
                                 }
                             )
                         }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "BEP-20: ${wd.destinationAddress}",
+                                fontFamily = JetBrainsMonoFamily,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (copiedAddressId == wd.id) MobitikSuccessGreen.copy(alpha = 0.2f) else MobitikUsdtTeal.copy(alpha = 0.15f),
+                                modifier = Modifier
+                                    .clickable {
+                                        clipboard.setText(AnnotatedString(wd.destinationAddress))
+                                        copiedAddressId = wd.id
+                                    }
+                                    .testTag("admin_copy_withdrawal_address_${wd.id}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy Withdrawal Address",
+                                        tint = if (copiedAddressId == wd.id) MobitikSuccessGreen else MobitikUsdtTeal,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (copiedAddressId == wd.id) "Copied ✓" else "Copy Address",
+                                        color = if (copiedAddressId == wd.id) MobitikSuccessGreen else MobitikUsdtTeal,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Destination (${wd.network}): ${wd.destinationAddress}",
-                            fontFamily = JetBrainsMonoFamily,
-                            style = MaterialTheme.typography.labelSmall
-                        )
                         Text(
                             text = "Gross: ${"%.2f".format(wd.amountUsdt)} USDT • Total Fee: ${"%.2f".format(totalFee)} USDT • Key: ${wd.idempotencyKey.take(12)}",
                             style = MaterialTheme.typography.labelSmall,

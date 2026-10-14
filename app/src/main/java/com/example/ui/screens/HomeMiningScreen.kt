@@ -32,9 +32,11 @@ import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -50,10 +52,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,15 +95,14 @@ import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.FullScreenContentCallback
 import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
-import com.google.android.gms.ads.rewarded.RewardedAd
-import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
-import com.google.android.gms.ads.rewardedinterstitial.RewardedInterstitialAd
-import com.google.android.gms.ads.rewardedinterstitial.RewardedInterstitialAdLoadCallback
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import kotlinx.coroutines.delay
 
-// Real AdMob Rewarded Interstitial Ad Unit from User's AdMob Console
-const val MOBITIK_REWARDED_AD_UNIT_ID = "ca-app-pub-7750958842878506/4746452763"
-const val MOBITIK_TEST_REWARDED_AD_UNIT_ID = "ca-app-pub-3940256099942544/5354046379"
+// Real AdMob Interstitial Ad Unit from User's AdMob Console
+const val MOBITIK_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-7750958842878506/5000750002"
+// Standard Google AdMob Test Ad Units (Guaranteed fill for testing / emulator / unverified ad serving)
+const val MOBITIK_TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
 
 private fun Context.findActivity(): Activity? {
     var ctx: Context = this
@@ -123,74 +128,121 @@ fun HomeMiningScreen(
     onNavigateToWalletTab: (subTab: Int) -> Unit,
     onNavigateToReferrals: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onNavigateToWhitepaper: () -> Unit
+    onNavigateToWhitepaper: () -> Unit,
+    onRewardedAdBoostClaimed: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var loadedRewardedInterstitialAd by remember { mutableStateOf<RewardedInterstitialAd?>(null) }
-    var loadedRewardedAd by remember { mutableStateOf<RewardedAd?>(null) }
+    var loadedInterstitialAd by remember { mutableStateOf<InterstitialAd?>(null) }
     var isAdLoading by remember { mutableStateOf(false) }
     var pendingRewardedAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingRewardLabel by remember { mutableStateOf("+0.22 MBTK") }
 
-    fun loadAdMobAds() {
-        if (isAdLoading || loadedRewardedInterstitialAd != null || loadedRewardedAd != null) return
-        isAdLoading = true
-        val adRequest = AdRequest.Builder().build()
+    // Mining Boost Daily Limit (5 ads) & 1-Minute Cooldown Timer
+    val boostPrefs = remember(context) {
+        context.getSharedPreferences("mobitik_boost_prefs", Context.MODE_PRIVATE)
+    }
+    val todayDateString = remember {
+        SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+    }
+    var boostCountToday by remember {
+        val savedDate = boostPrefs.getString("last_boost_date", "")
+        if (savedDate == todayDateString) {
+            mutableIntStateOf(boostPrefs.getInt("boost_count_today", 0))
+        } else {
+            mutableIntStateOf(0)
+        }
+    }
+    var lastBoostTimestamp by remember {
+        mutableLongStateOf(boostPrefs.getLong("last_boost_timestamp", 0L))
+    }
+    var cooldownSecondsRemaining by remember { mutableIntStateOf(0) }
 
-        // 1. Load Rewarded Interstitial Ad (primary real ad unit)
-        RewardedInterstitialAd.load(
-            context,
-            MOBITIK_REWARDED_AD_UNIT_ID,
-            adRequest,
-            object : RewardedInterstitialAdLoadCallback() {
-                override fun onAdLoaded(ad: RewardedInterstitialAd) {
-                    isAdLoading = false
-                    loadedRewardedInterstitialAd = ad
-                    Log.d("AdMob", "Real RewardedInterstitialAd loaded: $MOBITIK_REWARDED_AD_UNIT_ID")
-                }
+    LaunchedEffect(lastBoostTimestamp) {
+        while (true) {
+            val elapsed = System.currentTimeMillis() - lastBoostTimestamp
+            val remaining = ((60_000L - elapsed) / 1000L).toInt()
+            cooldownSecondsRemaining = if (remaining > 0) remaining else 0
+            if (cooldownSecondsRemaining <= 0) break
+            delay(1000L)
+        }
+    }
 
-                override fun onAdFailedToLoad(loadAdError: LoadAdError) {
-                    Log.w("AdMob", "Real RewardedInterstitialAd failed: ${loadAdError.message}. Trying RewardedAd format...")
-                    // 2. Fallback to RewardedAd format with real ID or test ID
-                    RewardedAd.load(
-                        context,
-                        MOBITIK_REWARDED_AD_UNIT_ID,
-                        adRequest,
-                        object : RewardedAdLoadCallback() {
-                            override fun onAdLoaded(ad: RewardedAd) {
-                                isAdLoading = false
-                                loadedRewardedAd = ad
-                                Log.d("AdMob", "RewardedAd loaded: $MOBITIK_REWARDED_AD_UNIT_ID")
+    var loadAdMobAds: () -> Unit = {}
+
+    loadAdMobAds = {
+        if (!isAdLoading && loadedInterstitialAd == null) {
+            isAdLoading = true
+            val adRequest = AdRequest.Builder().build()
+
+            // 1. Load user's real live Interstitial Ad Unit ID: ca-app-pub-7750958842878506/5000750002
+            InterstitialAd.load(
+                context,
+                MOBITIK_INTERSTITIAL_AD_UNIT_ID,
+                adRequest,
+                object : InterstitialAdLoadCallback() {
+                    override fun onAdLoaded(ad: InterstitialAd) {
+                        isAdLoading = false
+                        loadedInterstitialAd = ad
+                        Log.d("AdMob", "Live Interstitial loaded successfully: $MOBITIK_INTERSTITIAL_AD_UNIT_ID")
+                    }
+
+                    override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                        Log.w("AdMob", "Live Interstitial ($MOBITIK_INTERSTITIAL_AD_UNIT_ID) failed: ${loadAdError.message} (code ${loadAdError.code}). Falling back to Google test Interstitial...")
+                        // 2. Fallback to Google official test Interstitial ad unit
+                        InterstitialAd.load(
+                            context,
+                            MOBITIK_TEST_INTERSTITIAL_AD_UNIT_ID,
+                            adRequest,
+                            object : InterstitialAdLoadCallback() {
+                                override fun onAdLoaded(testAd: InterstitialAd) {
+                                    isAdLoading = false
+                                    loadedInterstitialAd = testAd
+                                    Log.d("AdMob", "Test Interstitial loaded successfully!")
+                                }
+
+                                override fun onAdFailedToLoad(testErr: LoadAdError) {
+                                    isAdLoading = false
+                                    Log.w("AdMob", "Test Interstitial ad failed: ${testErr.message}")
+                                }
                             }
-
-                            override fun onAdFailedToLoad(err: LoadAdError) {
-                                Log.w("AdMob", "RewardedAd also failed: ${err.message}. Loading test fallback...")
-                                // 3. Fallback to test unit for seamless local testing
-                                RewardedAd.load(
-                                    context,
-                                    MOBITIK_TEST_REWARDED_AD_UNIT_ID,
-                                    adRequest,
-                                    object : RewardedAdLoadCallback() {
-                                        override fun onAdLoaded(testAd: RewardedAd) {
-                                            isAdLoading = false
-                                            loadedRewardedAd = testAd
-                                        }
-
-                                        override fun onAdFailedToLoad(testErr: LoadAdError) {
-                                            isAdLoading = false
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    )
+                        )
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     LaunchedEffect(Unit) {
+        // Pre-load interstitial ad with a short delay to avoid graphics driver contention on startup
+        delay(2500L)
         loadAdMobAds()
+    }
+
+    val showAdAndExecute: (action: () -> Unit, rewardLabel: String) -> Unit = { targetAction, rewardLabel ->
+        val activity = context.findActivity()
+        val interstitial = loadedInterstitialAd
+
+        if (interstitial != null && activity != null) {
+            interstitial.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    loadedInterstitialAd = null
+                    loadAdMobAds()
+                    targetAction.invoke()
+                }
+
+                override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                    Log.w("AdMob", "Interstitial failed to show: ${adError.message}")
+                    loadedInterstitialAd = null
+                    loadAdMobAds()
+                    targetAction.invoke()
+                }
+            }
+            interstitial.show(activity)
+        } else {
+            loadAdMobAds()
+            pendingRewardLabel = rewardLabel
+            pendingRewardedAction = targetAction
+        }
     }
 
     val triggerMiningWithAd: () -> Unit = {
@@ -204,58 +256,27 @@ fun HomeMiningScreen(
                 targetAction = onStartMining
                 rewardLabel = "Watch Full Ad to Start 12h Mining (+${config.miningReward} MBTK)"
             }
+            showAdAndExecute(targetAction, rewardLabel)
+        }
+    }
 
-            val activity = context.findActivity()
-            val interstitial = loadedRewardedInterstitialAd
-            val rewarded = loadedRewardedAd
-
-            if (interstitial != null && activity != null) {
-                var rewardEarned = false
-                interstitial.fullScreenContentCallback = object : FullScreenContentCallback() {
-                    override fun onAdDismissedFullScreenContent() {
-                        loadedRewardedInterstitialAd = null
-                        loadAdMobAds()
-                        if (rewardEarned) {
-                            targetAction.invoke()
-                        }
-                    }
-
-                    override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                        loadedRewardedInterstitialAd = null
-                        loadAdMobAds()
-                        pendingRewardLabel = rewardLabel
-                        pendingRewardedAction = targetAction
-                    }
-                }
-                interstitial.show(activity) {
-                    rewardEarned = true
-                }
-            } else if (rewarded != null && activity != null) {
-                var rewardEarned = false
-                rewarded.fullScreenContentCallback = object : FullScreenContentCallback() {
-                    override fun onAdDismissedFullScreenContent() {
-                        loadedRewardedAd = null
-                        loadAdMobAds()
-                        if (rewardEarned) {
-                            targetAction.invoke()
-                        }
-                    }
-
-                    override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                        loadedRewardedAd = null
-                        loadAdMobAds()
-                        pendingRewardLabel = rewardLabel
-                        pendingRewardedAction = targetAction
-                    }
-                }
-                rewarded.show(activity) {
-                    rewardEarned = true
-                }
-            } else {
-                loadAdMobAds()
-                pendingRewardLabel = rewardLabel
-                pendingRewardedAction = targetAction
-            }
+    val triggerBoostAd: () -> Unit = {
+        if (boostCountToday < 5 && cooldownSecondsRemaining == 0) {
+            showAdAndExecute(
+                {
+                    val newCount = boostCountToday + 1
+                    boostCountToday = newCount
+                    val now = System.currentTimeMillis()
+                    lastBoostTimestamp = now
+                    boostPrefs.edit()
+                        .putString("last_boost_date", todayDateString)
+                        .putInt("boost_count_today", newCount)
+                        .putLong("last_boost_timestamp", now)
+                        .apply()
+                    onRewardedAdBoostClaimed.invoke()
+                },
+                "AdMob Interstitial Mining Boost (+0.05 MBTK)"
+            )
         }
     }
 
@@ -479,6 +500,17 @@ fun HomeMiningScreen(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(14.dp))
+
+                MiningBoostCard(
+                    boostCountToday = boostCountToday,
+                    maxDailyBoosts = 5,
+                    cooldownSeconds = cooldownSecondsRemaining,
+                    isBusy = isBusy,
+                    onWatchBoostClicked = triggerBoostAd,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Pioneer Posts Visual Card
@@ -553,7 +585,7 @@ fun HomeMiningScreen(
 
     if (pendingRewardedAction != null) {
         RewardedMiningAdDialog(
-            adUnitId = MOBITIK_REWARDED_AD_UNIT_ID,
+            adUnitId = MOBITIK_INTERSTITIAL_AD_UNIT_ID,
             rewardLabel = pendingRewardLabel,
             onAdRewardEarned = {
                 val action = pendingRewardedAction
@@ -647,7 +679,7 @@ private fun RewardedMiningAdDialog(
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = "Test Ad",
+                                text = "Ad",
                                 color = Color.White,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 11.sp,
@@ -656,7 +688,7 @@ private fun RewardedMiningAdDialog(
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Google AdMob Rewarded",
+                            text = "Google AdMob Sponsored",
                             style = MaterialTheme.typography.labelLarge,
                             color = Color(0xFF0F172A),
                             fontWeight = FontWeight.Bold
@@ -807,3 +839,167 @@ private fun RewardedMiningAdDialog(
         }
     }
 }
+
+@Composable
+private fun MiningBoostCard(
+    boostCountToday: Int,
+    maxDailyBoosts: Int,
+    cooldownSeconds: Int,
+    isBusy: Boolean,
+    onWatchBoostClicked: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isLimitReached = boostCountToday >= maxDailyBoosts
+    val isOnCooldown = cooldownSeconds > 0
+    val isReady = !isLimitReached && !isOnCooldown
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        modifier = modifier
+            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+            .testTag("mining_boost_ad_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header: Ad Tag + Title + Daily Badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = MobitikGold,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "Ad",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "MOBITIK Mining Boost",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color(0xFF0F172A)
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = when {
+                        isLimitReached -> Color(0xFFF1F5F9)
+                        isOnCooldown -> MobitikOrange.copy(alpha = 0.12f)
+                        else -> MobitikSuccessGreen.copy(alpha = 0.12f)
+                    },
+                    modifier = Modifier.border(
+                        1.dp,
+                        when {
+                            isLimitReached -> Color(0xFFCBD5E1)
+                            isOnCooldown -> MobitikOrange
+                            else -> MobitikSuccessGreen
+                        },
+                        RoundedCornerShape(50)
+                    )
+                ) {
+                    Text(
+                        text = when {
+                            isLimitReached -> "5/5 Max Reached"
+                            isOnCooldown -> "Cooldown ${cooldownSeconds}s"
+                            else -> "$boostCountToday/$maxDailyBoosts Today"
+                        },
+                        color = when {
+                            isLimitReached -> Color(0xFF64748B)
+                            isOnCooldown -> MobitikOrange
+                            else -> MobitikSuccessGreen
+                        },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = "Watch a sponsored ad to earn an instant +0.05 MBTK mining credit. Daily limit: 5 ads with a 1-minute interval between ads.",
+                fontSize = 12.sp,
+                color = Color(0xFF475569),
+                lineHeight = 16.sp
+            )
+
+            // Progress row for 5 daily ads
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                LinearProgressIndicator(
+                    progress = { (boostCountToday / maxDailyBoosts.toFloat()).coerceIn(0f, 1f) },
+                    color = if (isLimitReached) Color(0xFF94A3B8) else MobitikOrange,
+                    trackColor = Color(0xFFF1F5F9),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = if (isLimitReached) "All 5 ads watched today" else "${maxDailyBoosts - boostCountToday} boost ads remaining today",
+                        fontSize = 11.sp,
+                        color = Color(0xFF64748B)
+                    )
+                    Text(
+                        text = "+0.05 MBTK / ad",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MobitikOrange
+                    )
+                }
+            }
+
+            // Watch Button
+            Button(
+                onClick = onWatchBoostClicked,
+                enabled = isReady && !isBusy,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MobitikOrange,
+                    contentColor = Color.White,
+                    disabledContainerColor = Color(0xFFE2E8F0),
+                    disabledContentColor = Color(0xFF94A3B8)
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("watch_mining_boost_button")
+            ) {
+                Icon(
+                    imageVector = when {
+                        isLimitReached -> Icons.Default.CheckCircle
+                        isOnCooldown -> Icons.Default.HourglassTop
+                        else -> Icons.Default.PlayCircleFilled
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = when {
+                        isLimitReached -> "Daily Limit Reached (5/5) — Reset Tomorrow"
+                        isOnCooldown -> "Next Ad in ${cooldownSeconds}s"
+                        else -> "Watch Ad Boost (+0.05 MBTK)"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    }
+}
+

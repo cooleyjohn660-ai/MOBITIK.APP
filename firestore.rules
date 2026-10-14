@@ -45,8 +45,6 @@ service cloud.firestore {
                'totalMiningRewards', 'completedSessions', 'totalReferrals', 'activeReferrals',
                'referralRewards', 'autoStartMining', 'twoFactorEnabled', 'pinHash',
                'accountStatus', 'role', 'notificationsEnabled', 'themeMode', 'language',
-               'kycStatus', 'kycFullName', 'kycDocumentType', 'kycDocumentNumber',
-               'kycFaceHash', 'kycRejectionReason', 'isBanned', 'banReason', 'kycSubmittedAt',
                'createdAt', 'updatedAt'
              ]) &&
              data.keys().hasOnly([
@@ -57,6 +55,8 @@ service cloud.firestore {
                'totalMiningRewards', 'completedSessions', 'totalReferrals', 'activeReferrals',
                'referralRewards', 'autoStartMining', 'twoFactorEnabled', 'pinHash',
                'accountStatus', 'role', 'notificationsEnabled', 'themeMode', 'language',
+               'kycStatus', 'kycFullName', 'kycDocumentType', 'kycDocumentNumber',
+               'kycFaceHash', 'kycRejectionReason', 'isBanned', 'banReason', 'kycSubmittedAt',
                'createdAt', 'updatedAt'
              ]) &&
              data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
@@ -88,6 +88,15 @@ service cloud.firestore {
              data.notificationsEnabled is bool &&
              data.themeMode in ['DARK', 'LIGHT', 'SYSTEM'] &&
              data.language is string && data.language.size() >= 2 && data.language.size() <= 20 &&
+             (!('kycStatus' in data) || data.kycStatus in ['NONE', 'PENDING', 'APPROVED', 'REJECTED', 'BANNED']) &&
+             (!('kycFullName' in data) || (data.kycFullName is string && data.kycFullName.size() <= 100)) &&
+             (!('kycDocumentType' in data) || (data.kycDocumentType is string && data.kycDocumentType.size() <= 50)) &&
+             (!('kycDocumentNumber' in data) || (data.kycDocumentNumber is string && data.kycDocumentNumber.size() <= 80)) &&
+             (!('kycFaceHash' in data) || (data.kycFaceHash is string && data.kycFaceHash.size() <= 128)) &&
+             (!('kycRejectionReason' in data) || (data.kycRejectionReason is string && data.kycRejectionReason.size() <= 500)) &&
+             (!('isBanned' in data) || data.isBanned is bool) &&
+             (!('banReason' in data) || (data.banReason is string && data.banReason.size() <= 500)) &&
+             (!('kycSubmittedAt' in data) || data.kycSubmittedAt == null || data.kycSubmittedAt is timestamp) &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -389,8 +398,8 @@ service cloud.firestore {
     }
 
     match /public_profiles/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && (existing().accountStatus == 'ACTIVE' || existing().userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (existing().accountStatus == 'ACTIVE' || existing().userId == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn();
 
       allow create: if isSignedIn() &&
                        isValidId(userId) &&

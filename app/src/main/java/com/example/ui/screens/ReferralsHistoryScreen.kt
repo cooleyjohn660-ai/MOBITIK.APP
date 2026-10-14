@@ -529,8 +529,10 @@ fun HistoryScreen(
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column(horizontalAlignment = Alignment.End) {
+                                    val isCompleted = tx.status in listOf("CONFIRMED", "COMPLETED", "APPROVED")
                                     val isOut = tx.type in listOf("TRANSFER_OUT", "WITHDRAWAL")
                                     val color = when {
+                                        isCompleted -> MobitikSuccessGreen
                                         tx.type == "SWAP" -> MobitikUsdtTeal
                                         isOut -> MobitikWarningAmber
                                         else -> MobitikSuccessGreen
@@ -545,7 +547,10 @@ fun HistoryScreen(
                                         style = MaterialTheme.typography.labelLarge,
                                         color = color
                                     )
-                                    StatusPillBadge(label = tx.status, color = color)
+                                    StatusPillBadge(
+                                        label = if (isCompleted) "COMPLETED" else tx.status,
+                                        color = if (isCompleted) MobitikSuccessGreen else color
+                                    )
                                 }
                             }
                         }

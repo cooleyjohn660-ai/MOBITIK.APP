@@ -83,6 +83,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.AppConfig
 import com.example.data.model.OnChainWalletBalance
 import com.example.data.model.UsdtWithdrawal
@@ -104,7 +105,7 @@ import com.example.ui.theme.MobitikWarningAmber
 import java.util.UUID
 
 private enum class WalletQuickModal {
-    NONE, RECEIVE, SEND, SWAP, WITHDRAW, SETTING
+    NONE, SWAP, WITHDRAW, SETTING
 }
 
 @Composable
@@ -116,7 +117,6 @@ fun WalletSwapWithdrawScreen(
     onChainBalance: OnChainWalletBalance?,
     initialSubTab: Int,
     isBusy: Boolean,
-    onSendMobitik: (recipient: String, amount: Double, note: String, pin: String, onSuccess: (String) -> Unit) -> Unit,
     onSwapMbtkToUsdt: (mbtkAmount: Double, pin: String, onSuccess: (String) -> Unit) -> Unit,
     onConnectTrustWallet: (bep20Address: String, network: String) -> Unit,
     onDisconnectTrustWallet: () -> Unit,
@@ -306,7 +306,41 @@ fun WalletSwapWithdrawScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = { activeModal = WalletQuickModal.SWAP },
+                            colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange, contentColor = Color.White),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("quick_swap_button")
+                        ) {
+                            Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Swap to USDT", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        Button(
+                            onClick = { activeModal = WalletQuickModal.WITHDRAW },
+                            colors = ButtonDefaults.buttonColors(containerColor = MobitikUsdtTeal, contentColor = Color.White),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("quick_withdraw_button")
+                        ) {
+                            Icon(Icons.Default.Outbox, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Withdraw USDT", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Surface(
                         shape = RoundedCornerShape(10.dp),
@@ -349,33 +383,15 @@ fun WalletSwapWithdrawScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 3. Circular Action Buttons Row (Receive, Send, Swap, Withdraw, Setting - Matches Screenshot 3)
+            // 3. Action Buttons Row: MBTK Swap | Directly USDT Withdrawal | Settings
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 CircularWalletActionItem(
-                    icon = Icons.Default.ArrowDownward,
-                    label = "Receive",
-                    isSelected = activeModal == WalletQuickModal.RECEIVE,
-                    tag = "action_receive_button",
-                    onClick = {
-                        activeModal = if (activeModal == WalletQuickModal.RECEIVE) WalletQuickModal.NONE else WalletQuickModal.RECEIVE
-                    }
-                )
-                CircularWalletActionItem(
-                    icon = Icons.Default.ArrowOutward,
-                    label = "Send",
-                    isSelected = activeModal == WalletQuickModal.SEND,
-                    tag = "wallet_subtab_0",
-                    onClick = {
-                        activeModal = if (activeModal == WalletQuickModal.SEND) WalletQuickModal.NONE else WalletQuickModal.SEND
-                    }
-                )
-                CircularWalletActionItem(
                     icon = Icons.Default.SwapHoriz,
-                    label = "Swap",
+                    label = "Swap MBTK",
                     isSelected = activeModal == WalletQuickModal.SWAP,
                     tag = "wallet_subtab_1",
                     onClick = {
@@ -384,7 +400,7 @@ fun WalletSwapWithdrawScreen(
                 )
                 CircularWalletActionItem(
                     icon = Icons.Default.Outbox,
-                    label = "Withdraw",
+                    label = "Withdraw USDT",
                     isSelected = activeModal == WalletQuickModal.WITHDRAW,
                     tag = "wallet_subtab_2",
                     onClick = {
@@ -393,7 +409,7 @@ fun WalletSwapWithdrawScreen(
                 )
                 CircularWalletActionItem(
                     icon = Icons.Default.Tune,
-                    label = "Setting",
+                    label = "Settings",
                     isSelected = activeModal == WalletQuickModal.SETTING,
                     tag = "action_setting_button",
                     onClick = {
@@ -402,27 +418,10 @@ fun WalletSwapWithdrawScreen(
                 )
             }
 
-            // Expandable Clean Action Panel when Receive / Send / Swap / Withdraw / Setting is tapped
+            // Expandable Clean Action Panel when Swap / Withdraw / Setting is tapped
             if (activeModal != WalletQuickModal.NONE) {
                 Spacer(modifier = Modifier.height(16.dp))
                 when (activeModal) {
-                    WalletQuickModal.RECEIVE -> CompactReceivePanel(
-                        user = user,
-                        onCopy = {
-                            clipboard.setText(AnnotatedString(user.walletAddress))
-                            onShowMessage("Address copied!")
-                        },
-                        onClose = { activeModal = WalletQuickModal.NONE }
-                    )
-
-                    WalletQuickModal.SEND -> CompactSendPanel(
-                        user = user,
-                        isBusy = isBusy,
-                        onSendMobitik = onSendMobitik,
-                        onRequestWithdrawal = onRequestWithdrawal,
-                        onClose = { activeModal = WalletQuickModal.NONE }
-                    )
-
                     WalletQuickModal.SWAP -> CompactSwapPanel(
                         user = user,
                         config = config,
@@ -603,9 +602,20 @@ private fun CleanHistorySection(
     }
 
     val pendingWithdrawals = withdrawals.filter { it.status == "PENDING" }
-    val displayTxs = if (showAll) transactions else transactions.take(6)
+    val completedWithdrawals = withdrawals.filter { it.status in listOf("CONFIRMED", "APPROVED", "COMPLETED") }
+    val rejectedWithdrawals = withdrawals.filter { it.status in listOf("REJECTED", "CANCELLED", "FAILED") }
 
-    if (pendingWithdrawals.isEmpty() && displayTxs.isEmpty()) {
+    val completedWdIds = completedWithdrawals.map { "tx_${it.id}" }.toSet()
+    val completedWdHashes = completedWithdrawals.mapNotNull { it.txHash.takeIf { h -> h.isNotBlank() } }.toSet()
+    val dedupedTransactions = transactions.filterNot { tx ->
+        tx.id in completedWdIds || (tx.txHash.isNotBlank() && tx.txHash in completedWdHashes)
+    }
+    val displayTxs = if (showAll) dedupedTransactions else dedupedTransactions.take(6)
+    val displayOtherWds = if (showAll) rejectedWithdrawals else rejectedWithdrawals.take(2)
+
+    val hasAnyItems = pendingWithdrawals.isNotEmpty() || completedWithdrawals.isNotEmpty() || displayTxs.isNotEmpty() || displayOtherWds.isNotEmpty()
+
+    if (!hasAnyItems) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -620,7 +630,8 @@ private fun CleanHistorySection(
             )
         }
     } else {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 1. Pending Withdrawals
             pendingWithdrawals.forEach { wd ->
                 Card(
                     shape = RoundedCornerShape(14.dp),
@@ -630,7 +641,7 @@ private fun CleanHistorySection(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(14.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -642,8 +653,15 @@ private fun CleanHistorySection(
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                StatusPillBadge(label = wd.status, color = MobitikWarningAmber)
+                                StatusPillBadge(label = "PENDING", color = MobitikWarningAmber)
                             }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Net Payout: ${"%.2f".format(wd.finalAmountUsdt)} USDT • ${wd.network}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MobitikWarningAmber,
+                                fontWeight = FontWeight.Medium
+                            )
                             Text(
                                 text = wd.destinationAddress,
                                 fontFamily = JetBrainsMonoFamily,
@@ -652,6 +670,14 @@ private fun CleanHistorySection(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            val dateText = formatTimestamp((wd.updatedAt ?: wd.createdAt)?.toDate())
+                            if (dateText.isNotBlank()) {
+                                Text(
+                                    text = dateText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
                         }
                         TextButton(onClick = { onCancelWithdrawal(wd) }) {
                             Text("Cancel", color = MobitikErrorRed, fontWeight = FontWeight.Bold)
@@ -660,6 +686,143 @@ private fun CleanHistorySection(
                 }
             }
 
+            // 2. Completed / Approved Withdrawals
+            completedWithdrawals.forEach { wd ->
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Withdraw ${"%.2f".format(wd.amountUsdt)} USDT",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                StatusPillBadge(label = "COMPLETED", color = MobitikSuccessGreen)
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Net Payout: ${"%.2f".format(wd.finalAmountUsdt)} USDT • ${wd.network}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MobitikSuccessGreen,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "To: ${wd.destinationAddress}",
+                                fontFamily = JetBrainsMonoFamily,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (wd.txHash.isNotBlank() && wd.txHash.startsWith("0x")) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "BscScan ↗ (${wd.txHash.take(10)}...)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MobitikOrange,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable {
+                                        context.startActivity(
+                                            Intent(
+                                                Intent.ACTION_VIEW,
+                                                Uri.parse("https://bscscan.com/tx/${wd.txHash}")
+                                            )
+                                        )
+                                    }
+                                )
+                            }
+                            if (wd.adminNote.isNotBlank()) {
+                                Text(
+                                    text = wd.adminNote,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            val dateText = formatTimestamp((wd.updatedAt ?: wd.createdAt)?.toDate())
+                            if (dateText.isNotBlank()) {
+                                Text(
+                                    text = dateText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "-${"%.2f".format(wd.amountUsdt)} USDT",
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MobitikSuccessGreen,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. Rejected or Cancelled Withdrawals (if any)
+            displayOtherWds.forEach { wd ->
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Withdraw ${"%.2f".format(wd.amountUsdt)} USDT",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                StatusPillBadge(label = wd.status, color = MobitikErrorRed)
+                            }
+                            if (wd.adminNote.isNotBlank()) {
+                                Text(
+                                    text = wd.adminNote,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            val dateText = formatTimestamp((wd.updatedAt ?: wd.createdAt)?.toDate())
+                            if (dateText.isNotBlank()) {
+                                Text(
+                                    text = dateText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "${"%.2f".format(wd.amountUsdt)} USDT",
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // 4. Wallet Transactions (Swaps, Transfers, Mining Rewards, etc.)
             displayTxs.forEach { tx ->
                 Card(
                     shape = RoundedCornerShape(14.dp),
@@ -669,13 +832,13 @@ private fun CleanHistorySection(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(14.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = tx.type,
+                                text = tx.type.replace("_", " "),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -707,9 +870,10 @@ private fun CleanHistorySection(
                                 fontWeight = FontWeight.Bold,
                                 color = if (tx.tokenSymbol == "USDT") MobitikUsdtTeal else MobitikGold
                             )
+                            val isCompleted = tx.status in listOf("CONFIRMED", "COMPLETED", "APPROVED")
                             StatusPillBadge(
-                                label = tx.status,
-                                color = if (tx.status == "CONFIRMED" || tx.status == "COMPLETED") MobitikSuccessGreen else MobitikWarningAmber
+                                label = if (isCompleted) "COMPLETED" else tx.status,
+                                color = if (isCompleted) MobitikSuccessGreen else MobitikWarningAmber
                             )
                         }
                     }
@@ -867,208 +1031,9 @@ private fun CompactMetricRow(label: String, value: String) {
     }
 }
 
-@Composable
-private fun CompactReceivePanel(
-    user: UserProfile,
-    onCopy: () -> Unit,
-    onClose: () -> Unit
-) {
-    val context = LocalContext.current
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MobitikOrange.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Receive", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                TextButton(onClick = onClose) { Text("Close") }
-            }
-            WalletAddressQrCode(address = user.walletAddress, qrSize = 160.dp)
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = user.walletAddress,
-                fontFamily = JetBrainsMonoFamily,
-                style = MaterialTheme.typography.labelMedium,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = onCopy,
-                    colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange, contentColor = MobitikBlack)
-                ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Copy", fontWeight = FontWeight.Bold)
-                }
-                OutlinedButton(
-                    onClick = {
-                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, user.walletAddress)
-                        }
-                        context.startActivity(Intent.createChooser(sendIntent, "Share Address"))
-                    }
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Share")
-                }
-            }
-        }
-    }
-}
 
-@Composable
-private fun CompactSendPanel(
-    user: UserProfile,
-    isBusy: Boolean,
-    onSendMobitik: (String, Double, String, String, (String) -> Unit) -> Unit,
-    onRequestWithdrawal: (String, String, Double, String, String, (UsdtWithdrawal) -> Unit) -> Unit,
-    onClose: () -> Unit
-) {
-    var recipient by remember { mutableStateOf("") }
-    var amountStr by remember { mutableStateOf("") }
-    var pin by remember { mutableStateOf("") }
 
-    val amount = amountStr.toDoubleOrNull() ?: 0.0
-    val trimmedRecipient = recipient.trim()
-    val isMbtkFormat = trimmedRecipient.uppercase().startsWith("MBTK-") && trimmedRecipient.length >= 8
-    val isUsernameFormat = trimmedRecipient.removePrefix("@").matches(Regex("^[a-zA-Z0-9_]{3,30}$"))
-    val validRecipient = isMbtkFormat || isUsernameFormat
 
-    val currentAvailable = if (user.availableBalance > 0.0) user.availableBalance else (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0)
-    val hasSufficientBalance = amount > 0.0 && amount <= currentAvailable
-
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Send MOBITIK (App-to-App Instant)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
-                    Text(
-                        text = "Instant transfer to any pioneer via @username or MBTK- address • 0 Fee",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF64748B)
-                    )
-                }
-                TextButton(onClick = onClose) { Text("Close") }
-            }
-
-            if (currentAvailable <= 0.0) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFFFEF3C7),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Your available balance is currently 0.0000 MBTK. Tap Start Mining on the Home screen to earn free MBTK tokens before sending.",
-                        color = Color(0xFF92400E),
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp,
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
-            }
-
-            OutlinedTextField(
-                value = recipient,
-                onValueChange = { recipient = it.trim() },
-                label = { Text("Recipient (MBTK-... or @username)") },
-                placeholder = { Text("MBTK-XXXX-XXXX or @alice") },
-                supportingText = {
-                    if (recipient.isNotBlank() && !validRecipient) {
-                        Text("Enter a valid MBTK- address or pioneer @username", color = MobitikErrorRed)
-                    }
-                },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("send_recipient_input")
-            )
-
-            OutlinedTextField(
-                value = amountStr,
-                onValueChange = { amountStr = it },
-                label = { Text("Amount (MBTK) • Available: " + "%.4f".format(currentAvailable) + " MBTK") },
-                trailingIcon = {
-                    TextButton(onClick = {
-                        amountStr = "%.4f".format(currentAvailable)
-                    }) {
-                        Text("MAX", color = MobitikOrange, fontWeight = FontWeight.Bold)
-                    }
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("send_amount_input")
-            )
-
-            if (user.pinHash.isNotBlank()) {
-                OutlinedTextField(
-                    value = pin,
-                    onValueChange = { if (it.length <= 6) pin = it.filter { c -> c.isDigit() } },
-                    label = { Text("Security PIN") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            Button(
-                onClick = {
-                    val formattedRecipient = if (trimmedRecipient.startsWith("@")) {
-                        trimmedRecipient.lowercase()
-                    } else if (trimmedRecipient.uppercase().startsWith("MBTK-")) {
-                        trimmedRecipient.uppercase()
-                    } else {
-                        trimmedRecipient.lowercase()
-                    }
-
-                    onSendMobitik(formattedRecipient, amount, "App-to-App Instant MBTK Transfer", pin) {
-                        recipient = ""
-                        amountStr = ""
-                        pin = ""
-                        onClose()
-                    }
-                },
-                enabled = !isBusy && validRecipient && hasSufficientBalance,
-                colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange, contentColor = Color.White),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("send_mbtk_submit_button")
-            ) {
-                Text("Send MOBITIK Instantly", fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
 
 @Composable
 private fun CompactSwapPanel(
@@ -1087,7 +1052,7 @@ private fun CompactSwapPanel(
     val feeUsdt = grossUsdt * (config.swapFeePercent / 100.0)
     val netUsdt = (grossUsdt - feeUsdt).coerceAtLeast(0.0)
 
-    val currentAvailable = if (user.availableBalance > 0.0) user.availableBalance else (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0)
+    val currentAvailable = maxOf(user.availableBalance, (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0))
     val isSwapActive = config.swapEnabled || config.swapRateUsdt > 0.0
     val canSwap = !isBusy && isSwapActive && mbtkAmount > 0.0 && mbtkAmount <= currentAvailable
 
@@ -1248,6 +1213,7 @@ private fun CompactWithdrawPanel(
     onOpenKycDialog: () -> Unit,
     onClose: () -> Unit
 ) {
+    var selectedNetwork by remember { mutableStateOf("BNB Smart Chain (BEP-20)") }
     var address by remember { mutableStateOf(user.externalWalletAddress) }
     var amountStr by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
@@ -1256,8 +1222,12 @@ private fun CompactWithdrawPanel(
     val amount = amountStr.toDoubleOrNull() ?: 0.0
     val totalFee = config.withdrawalNetworkFeeUsdt + config.withdrawalPlatformFeeUsdt
     val finalUsdt = (amount - totalFee).coerceAtLeast(0.0)
-    val isValidDest = address.trim().matches(Regex("^0x[a-fA-F0-9]{40}$"))
-    val isKycApproved = user.kycStatus == "APPROVED"
+    val isBep20 = selectedNetwork.contains("BEP-20")
+    val isValidDest = if (isBep20) {
+        address.trim().matches(Regex("^0x[a-fA-F0-9]{40}$"))
+    } else {
+        address.trim().matches(Regex("^T[a-zA-Z0-9]{33}$"))
+    }
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -1276,9 +1246,14 @@ private fun CompactWithdrawPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("Withdraw USDT (Admin Approval Required)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
                     Text(
-                        text = "BNB Smart Chain (BEP-20) • Min $" + "%.2f".format(config.minWithdrawalUsdt) + " • Fee $" + "%.2f".format(totalFee),
+                        text = "Direct USDT Withdrawal",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A)
+                    )
+                    Text(
+                        text = "Instant swap & direct withdrawal • Min $" + "%.2f".format(config.minWithdrawalUsdt) + " • Fee $" + "%.2f".format(totalFee),
                         style = MaterialTheme.typography.labelSmall,
                         color = MobitikUsdtTeal
                     )
@@ -1286,91 +1261,52 @@ private fun CompactWithdrawPanel(
                 TextButton(onClick = onClose) { Text("Close") }
             }
 
-            // KYC Status Banner
-            if (!isKycApproved) {
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF3C7)),
-                    modifier = Modifier.fillMaxWidth()
+            // Network Selector (BEP-20 / TRC-20)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = isBep20,
+                    onClick = { selectedNetwork = "BNB Smart Chain (BEP-20)" },
+                    label = { Text("BEP-20 (BSC)") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MobitikOrange.copy(alpha = 0.15f),
+                        selectedLabelColor = MobitikOrange
+                    )
+                )
+                FilterChip(
+                    selected = !isBep20,
+                    onClick = { selectedNetwork = "TRON (TRC-20)" },
+                    label = { Text("TRC-20 (Tron)") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MobitikUsdtTeal.copy(alpha = 0.15f),
+                        selectedLabelColor = MobitikUsdtTeal
+                    )
+                )
+            }
+
+            // Direct Payout Notice (No KYC Required)
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFFECFDF5),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.VerifiedUser,
-                                contentDescription = null,
-                                tint = Color(0xFFB45309),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Face KYC Verification Required",
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF92400E),
-                                fontSize = 14.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = when (user.kycStatus) {
-                                "PENDING" -> "Your face scan and identity are currently under Admin review. Withdrawals will unlock once approved."
-                                "REJECTED" -> "Your previous KYC submission was rejected: " + user.kycRejectionReason + ". Please resubmit."
-                                else -> "To withdraw USDT, complete your 1-person-1-account biometric face scan and legal identity verification."
-                            },
-                            fontSize = 12.sp,
-                            color = Color(0xFF78350F),
-                            lineHeight = 16.sp
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        if (user.kycStatus != "PENDING") {
-                            Button(
-                                onClick = onOpenKycDialog,
-                                colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange, contentColor = Color.White),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Verify Face KYC Now", fontWeight = FontWeight.Bold)
-                            }
-                        } else {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFFFDE68A),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = "⏳ KYC Pending Admin Approval",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF92400E),
-                                    modifier = Modifier.padding(8.dp),
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    }
-                }
-            } else {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFFECFDF5),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MobitikSuccessGreen, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("KYC Verified Pioneer (1 Person 1 Account Approved)", color = Color(0xFF065F46), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    }
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MobitikSuccessGreen, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Instant Direct Payouts Active (No KYC Required)", color = Color(0xFF065F46), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 }
             }
 
             OutlinedTextField(
                 value = address,
                 onValueChange = { address = it.trim() },
-                enabled = isKycApproved,
-                label = { Text("BEP-20 Wallet Address (0x...)") },
-                placeholder = { Text("0x...") },
+                label = { Text(if (isBep20) "BEP-20 Wallet Address (0x...)" else "TRC-20 Wallet Address (T...)") },
+                placeholder = { Text(if (isBep20) "0x..." else "T...") },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1380,10 +1316,9 @@ private fun CompactWithdrawPanel(
             OutlinedTextField(
                 value = amountStr,
                 onValueChange = { amountStr = it },
-                enabled = isKycApproved,
                 label = { Text("USDT Amount • Available: " + "%.2f".format(user.usdtBalance) + " USDT") },
                 trailingIcon = {
-                    TextButton(onClick = { amountStr = "%.2f".format(user.usdtBalance) }, enabled = isKycApproved) {
+                    TextButton(onClick = { amountStr = "%.2f".format(user.usdtBalance) }) {
                         Text("MAX", color = MobitikUsdtTeal, fontWeight = FontWeight.Bold)
                     }
                 },
@@ -1411,7 +1346,7 @@ private fun CompactWithdrawPanel(
 
             Button(
                 onClick = { showConfirm = true },
-                enabled = isKycApproved && !isBusy && isValidDest && amount >= config.minWithdrawalUsdt && amount <= user.usdtBalance && finalUsdt > 0.0,
+                enabled = !isBusy && isValidDest && amount >= config.minWithdrawalUsdt && amount <= user.usdtBalance && finalUsdt > 0.0,
                 colors = ButtonDefaults.buttonColors(containerColor = MobitikUsdtTeal, contentColor = Color.White),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
@@ -1419,7 +1354,10 @@ private fun CompactWithdrawPanel(
                     .height(48.dp)
                     .testTag("request_usdt_withdrawal_button")
             ) {
-                Text("Submit USDT Withdrawal for Approval", fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Withdraw Directly to " + (if (isBep20) "BEP-20" else "TRC-20") + " Wallet",
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -1427,13 +1365,14 @@ private fun CompactWithdrawPanel(
     if (showConfirm) {
         AlertDialog(
             onDismissRequest = { showConfirm = false },
-            title = { Text("Confirm USDT Withdrawal") },
+            title = { Text("Confirm Direct USDT Withdrawal") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Network: $selectedNetwork", fontWeight = FontWeight.Bold, color = MobitikOrange)
                     Text("Amount: " + "%.2f".format(amount) + " USDT (Fee: " + "%.2f".format(totalFee) + " USDT)")
                     Text("Receive: " + "%.2f".format(finalUsdt) + " USDT")
                     Text("To: " + address.trim(), fontFamily = JetBrainsMonoFamily, style = MaterialTheme.typography.labelSmall)
-                    Text("Note: USDT withdrawals require manual treasury approval in Admin section before blockchain transfer.", fontSize = 11.sp, color = Color(0xFF64748B))
+                    Text("USDT payout is sent directly to your destination crypto wallet address upon treasury confirmation.", fontSize = 11.sp, color = Color(0xFF64748B))
                     if (user.pinHash.isNotBlank()) {
                         OutlinedTextField(
                             value = pin,
@@ -1453,7 +1392,7 @@ private fun CompactWithdrawPanel(
                         val key = UUID.randomUUID().toString().take(16)
                         onRequestWithdrawal(
                             address.trim(),
-                            "BNB Smart Chain (BEP-20)",
+                            selectedNetwork,
                             amount,
                             pin,
                             key
@@ -1465,7 +1404,7 @@ private fun CompactWithdrawPanel(
                     colors = ButtonDefaults.buttonColors(containerColor = MobitikSuccessGreen, contentColor = Color.White),
                     modifier = Modifier.testTag("confirm_withdrawal_dialog_button")
                 ) {
-                    Text("Confirm & Request Approval")
+                    Text("Confirm Direct Withdrawal")
                 }
             },
             dismissButton = {
@@ -1633,4 +1572,5 @@ private fun CompactWalletSettingPanel(
         }
     }
 }
+
 

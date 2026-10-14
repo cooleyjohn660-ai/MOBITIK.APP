@@ -438,13 +438,17 @@ class MobitikRepository(
             }
 
             // Check if username is already taken in public_profiles
-            val usernameCheck = db.collection("public_profiles")
-                .whereEqualTo("accountStatus", "ACTIVE")
-                .whereEqualTo("username", cleanUsername)
-                .get()
-                .await()
-            if (!usernameCheck.isEmpty && usernameCheck.documents.any { it.id != uid }) {
-                return Result.failure(IllegalArgumentException("Username @$cleanUsername is already taken."))
+            try {
+                val usernameCheck = db.collection("public_profiles")
+                    .whereEqualTo("username", cleanUsername)
+                    .limit(1)
+                    .get()
+                    .await()
+                if (!usernameCheck.isEmpty && usernameCheck.documents.any { it.id != uid }) {
+                    return Result.failure(IllegalArgumentException("Username @$cleanUsername is already taken."))
+                }
+            } catch (e: Exception) {
+                Log.w("MobitikRepo", "Username check non-fatal exception: ${e.message}")
             }
 
             val walletAddress = generateWalletAddress(uid)
@@ -453,14 +457,18 @@ class MobitikRepository(
 
             var inviterUid = ""
             if (cleanRefCode.isNotBlank() && cleanRefCode != myReferralCode) {
-                val inviterSnap = db.collection("public_profiles")
-                    .whereEqualTo("accountStatus", "ACTIVE")
-                    .whereEqualTo("referralCode", cleanRefCode)
-                    .get()
-                    .await()
-                val inviterDoc = inviterSnap.documents.firstOrNull { it.id != uid }
-                if (inviterDoc != null) {
-                    inviterUid = inviterDoc.id
+                try {
+                    val inviterSnap = db.collection("public_profiles")
+                        .whereEqualTo("referralCode", cleanRefCode)
+                        .limit(1)
+                        .get()
+                        .await()
+                    val inviterDoc = inviterSnap.documents.firstOrNull { it.id != uid }
+                    if (inviterDoc != null) {
+                        inviterUid = inviterDoc.id
+                    }
+                } catch (e: Exception) {
+                    Log.w("MobitikRepo", "Inviter check non-fatal exception: ${e.message}")
                 }
             }
 
@@ -507,43 +515,51 @@ class MobitikRepository(
 
             // If referred by a valid pioneer, create ReferralRecord & increment inviter's public counter
             if (inviterUid.isNotBlank()) {
-                val refId = "ref_${uid}"
-                val referralRecord = ReferralRecord(
-                    id = refId,
-                    referrerUserId = inviterUid,
-                    referredUserId = uid,
-                    referredUsername = cleanUsername,
-                    referralCode = cleanRefCode,
-                    status = "REGISTERED",
-                    rewardAmount = 0.0
-                )
-                db.collection("referrals").document(refId).set(referralRecord.toCreateMap()).await()
+                try {
+                    val refId = "ref_${uid}"
+                    val referralRecord = ReferralRecord(
+                        id = refId,
+                        referrerUserId = inviterUid,
+                        referredUserId = uid,
+                        referredUsername = cleanUsername,
+                        referralCode = cleanRefCode,
+                        status = "REGISTERED",
+                        rewardAmount = 0.0
+                    )
+                    db.collection("referrals").document(refId).set(referralRecord.toCreateMap()).await()
 
-                val inviterPublicDoc = db.collection("public_profiles").document(inviterUid).get().await()
-                if (inviterPublicDoc.exists()) {
-                    val currentRefs = inviterPublicDoc.getLong("totalReferrals") ?: 0L
-                    db.collection("public_profiles").document(inviterUid).update(
-                        mapOf(
-                            "totalReferrals" to (currentRefs + 1L),
-                            "updatedAt" to FieldValue.serverTimestamp()
-                        )
-                    ).await()
+                    val inviterPublicDoc = db.collection("public_profiles").document(inviterUid).get().await()
+                    if (inviterPublicDoc.exists()) {
+                        val currentRefs = inviterPublicDoc.getLong("totalReferrals") ?: 0L
+                        db.collection("public_profiles").document(inviterUid).update(
+                            mapOf(
+                                "totalReferrals" to (currentRefs + 1L),
+                                "updatedAt" to FieldValue.serverTimestamp()
+                            )
+                        ).await()
+                    }
+
+                    createNotification(
+                        recipientUid = inviterUid,
+                        title = "New Pioneer Joined via Your Code!",
+                        message = "@$cleanUsername registered using your referral code $cleanRefCode.",
+                        category = "REFERRAL"
+                    )
+                } catch (refErr: Exception) {
+                    Log.w("MobitikRepo", "Referral recording non-fatal exception: ${refErr.message}")
                 }
-
-                createNotification(
-                    recipientUid = inviterUid,
-                    title = "New Pioneer Joined via Your Code!",
-                    message = "@$cleanUsername registered using your referral code $cleanRefCode.",
-                    category = "REFERRAL"
-                )
             }
 
-            createNotification(
-                recipientUid = uid,
-                title = "Welcome to MOBITIK Network",
-                message = "Your unique MOBITIK wallet ($walletAddress) is active. Start your first 12-hour mining session!",
-                category = "SECURITY"
-            )
+            try {
+                createNotification(
+                    recipientUid = uid,
+                    title = "Welcome to MOBITIK Network",
+                    message = "Your unique MOBITIK wallet ($walletAddress) is active. Start your first 12-hour mining session!",
+                    category = "SECURITY"
+                )
+            } catch (notifErr: Exception) {
+                Log.w("MobitikRepo", "Welcome notification non-fatal exception: ${notifErr.message}")
+            }
 
             Result.success(profile)
         } catch (e: CancellationException) {
@@ -891,7 +907,7 @@ class MobitikRepository(
             val txId = "tx_out_${UUID.randomUUID().toString().replace("-", "").take(16)}"
 
             // App-to-App Instant Transfer (Strictly MOBITIK MBTK)
-            val currentAvailable = if (user.availableBalance > 0.0) user.availableBalance else (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0)
+            val currentAvailable = maxOf(user.availableBalance, (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0))
             val fee = 0.0 // Zero fee for instant internal app-to-app transfers
             val totalDeducted = amount + fee
 
@@ -983,7 +999,7 @@ class MobitikRepository(
             require(isSwapActive) { "Swaps are currently disabled in protocol settings." }
             require(mbtkAmount > 0.0) { "Enter a valid MBTK amount greater than 0." }
 
-            val currentAvailable = if (user.availableBalance > 0.0) user.availableBalance else (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0)
+            val currentAvailable = maxOf(user.availableBalance, (user.totalBalance - user.lockedBalance).coerceAtLeast(0.0))
             require(mbtkAmount <= currentAvailable && currentAvailable > 0.0) {
                 if (currentAvailable <= 0.0) {
                     "Your available MBTK balance is 0.0000. Complete a 12-hour mining session on the Home tab first."
@@ -1134,15 +1150,15 @@ class MobitikRepository(
         val uid = requireUserId()
         return try {
             require(config.withdrawalsEnabled) { "External USDT withdrawals are currently paused by administrator." }
-            require(user.kycStatus == "APPROVED") {
-                "KYC Face Verification required before requesting USDT withdrawal. Please complete Face Scan KYC in your Wallet."
-            }
             val cleanDest = destinationAddress.trim()
-            require(BscWeb3Client.isValidBep20Address(cleanDest)) {
-                "Invalid BEP-20 destination address. Enter a valid 0x... BNB Smart Chain address."
-            }
-            require(network == "BNB Smart Chain (BEP-20)") {
-                "Only BNB Smart Chain (BEP-20) is currently verified for USDT withdrawals."
+            if (network.contains("BEP-20", ignoreCase = true)) {
+                require(BscWeb3Client.isValidBep20Address(cleanDest)) {
+                    "Invalid BEP-20 destination address. Enter a valid 0x... BNB Smart Chain address."
+                }
+            } else {
+                require(cleanDest.startsWith("T") && cleanDest.length == 34) {
+                    "Invalid TRC-20 destination address. Enter a valid T... TRON network address."
+                }
             }
             require(amountUsdt >= config.minWithdrawalUsdt) {
                 "Minimum withdrawal amount is ${"%.2f".format(config.minWithdrawalUsdt)} USDT."
@@ -1254,6 +1270,18 @@ class MobitikRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+
+            try {
+                db.collection("transactions").document("tx_${withdrawal.id}").update(
+                    mapOf(
+                        "status" to "CANCELLED",
+                        "note" to "USDT Withdrawal Cancelled by user",
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } catch (e: Exception) {
+                Log.w("MobitikRepo", "Cancel tx non-fatal: ${e.message}")
+            }
 
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -1676,6 +1704,43 @@ class MobitikRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+
+            // Synchronize the transaction record for the user so it reflects COMPLETED status
+            val txStatus = if (newStatus in listOf("CONFIRMED", "APPROVED", "COMPLETED")) "COMPLETED" else newStatus
+            try {
+                val txDocRef = db.collection("transactions").document("tx_${withdrawal.id}")
+                val txSnap = txDocRef.get().await()
+                if (txSnap.exists()) {
+                    txDocRef.update(
+                        mapOf(
+                            "status" to txStatus,
+                            "txHash" to resolvedTxHash,
+                            "note" to (if (txStatus == "COMPLETED")
+                                "USDT Withdrawal Approved (${"%.2f".format(withdrawal.finalAmountUsdt)} USDT sent to ${withdrawal.destinationAddress})"
+                            else
+                                "USDT Withdrawal $newStatus: ${adminNote.ifBlank { "Updated by Admin" }}"),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                } else {
+                    val newTx = WalletTransaction(
+                        id = "tx_${withdrawal.id}",
+                        userId = withdrawal.userId,
+                        type = "WITHDRAWAL",
+                        senderAddress = "",
+                        recipientAddress = withdrawal.destinationAddress,
+                        amount = withdrawal.amountUsdt,
+                        fee = withdrawal.networkFeeUsdt + withdrawal.platformFeeUsdt,
+                        tokenSymbol = "USDT",
+                        note = "USDT Withdrawal $txStatus (${"%.2f".format(withdrawal.finalAmountUsdt)} USDT sent to ${withdrawal.destinationAddress})",
+                        status = txStatus,
+                        txHash = resolvedTxHash
+                    )
+                    txDocRef.set(newTx.toCreateMap()).await()
+                }
+            } catch (e: Exception) {
+                Log.w("MobitikRepo", "Update tx in adminProcessWithdrawal non-fatal: ${e.message}")
+            }
 
             val userDoc = db.collection("users").document(withdrawal.userId).get().await()
             if (userDoc.exists()) {
