@@ -41,25 +41,36 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.NetworkCheck
+import com.example.data.remote.NetworkDiagnosticReport
+import com.example.ui.components.NetworkDiagnosticDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.style.TextDecoration
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
+import com.example.data.remote.AdManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,9 +89,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.net.Uri
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material3.OutlinedButton
 import com.example.R
 import com.example.data.model.AppConfig
 import com.example.data.model.MiningSession
+import com.example.data.model.MobitikTask
 import com.example.data.model.UserProfile
 import com.example.data.model.WalletTransaction
 import com.example.ui.theme.JetBrainsMonoFamily
@@ -89,6 +105,7 @@ import com.example.ui.theme.MobitikCharcoal
 import com.example.ui.theme.MobitikGold
 import com.example.ui.theme.MobitikOrange
 import com.example.ui.theme.MobitikSuccessGreen
+import com.example.ui.theme.MobitikErrorRed
 import com.example.ui.viewmodel.MiningTimerUiState
 import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdRequest
@@ -129,154 +146,70 @@ fun HomeMiningScreen(
     onNavigateToReferrals: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToWhitepaper: () -> Unit,
-    onRewardedAdBoostClaimed: () -> Unit = {}
+    onRewardedAdBoostClaimed: () -> Unit = {},
+    tasks: List<MobitikTask> = emptyList(),
+    completedTaskIds: Set<String> = emptySet(),
+    onClaimTaskReward: (MobitikTask) -> Unit = {},
+    networkDiagnosticReport: NetworkDiagnosticReport? = null,
+    isDiagnosticRunning: Boolean = false,
+    onRunDiagnostic: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var loadedInterstitialAd by remember { mutableStateOf<InterstitialAd?>(null) }
-    var isAdLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val isAdReady by AdManager.isAdReady.collectAsState()
+    val isAdLoading by AdManager.isAdLoading.collectAsState()
+    val adLoadError by AdManager.loadError.collectAsState()
     var pendingRewardedAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingRewardLabel by remember { mutableStateOf("+0.22 MBTK") }
+    var showDiagnosticDialog by remember { mutableStateOf(false) }
 
-    // Mining Boost Daily Limit (5 ads) & 1-Minute Cooldown Timer
-    val boostPrefs = remember(context) {
-        context.getSharedPreferences("mobitik_boost_prefs", Context.MODE_PRIVATE)
-    }
-    val todayDateString = remember {
-        SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
-    }
-    var boostCountToday by remember {
-        val savedDate = boostPrefs.getString("last_boost_date", "")
-        if (savedDate == todayDateString) {
-            mutableIntStateOf(boostPrefs.getInt("boost_count_today", 0))
-        } else {
-            mutableIntStateOf(0)
-        }
-    }
-    var lastBoostTimestamp by remember {
-        mutableLongStateOf(boostPrefs.getLong("last_boost_timestamp", 0L))
-    }
-    var cooldownSecondsRemaining by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(lastBoostTimestamp) {
-        while (true) {
-            val elapsed = System.currentTimeMillis() - lastBoostTimestamp
-            val remaining = ((60_000L - elapsed) / 1000L).toInt()
-            cooldownSecondsRemaining = if (remaining > 0) remaining else 0
-            if (cooldownSecondsRemaining <= 0) break
-            delay(1000L)
-        }
-    }
-
-    var loadAdMobAds: () -> Unit = {}
-
-    loadAdMobAds = {
-        if (!isAdLoading && loadedInterstitialAd == null) {
-            isAdLoading = true
-            val adRequest = AdRequest.Builder().build()
-
-            // 1. Load user's real live Interstitial Ad Unit ID: ca-app-pub-7750958842878506/5000750002
-            InterstitialAd.load(
-                context,
-                MOBITIK_INTERSTITIAL_AD_UNIT_ID,
-                adRequest,
-                object : InterstitialAdLoadCallback() {
-                    override fun onAdLoaded(ad: InterstitialAd) {
-                        isAdLoading = false
-                        loadedInterstitialAd = ad
-                        Log.d("AdMob", "Live Interstitial loaded successfully: $MOBITIK_INTERSTITIAL_AD_UNIT_ID")
-                    }
-
-                    override fun onAdFailedToLoad(loadAdError: LoadAdError) {
-                        Log.w("AdMob", "Live Interstitial ($MOBITIK_INTERSTITIAL_AD_UNIT_ID) failed: ${loadAdError.message} (code ${loadAdError.code}). Falling back to Google test Interstitial...")
-                        // 2. Fallback to Google official test Interstitial ad unit
-                        InterstitialAd.load(
-                            context,
-                            MOBITIK_TEST_INTERSTITIAL_AD_UNIT_ID,
-                            adRequest,
-                            object : InterstitialAdLoadCallback() {
-                                override fun onAdLoaded(testAd: InterstitialAd) {
-                                    isAdLoading = false
-                                    loadedInterstitialAd = testAd
-                                    Log.d("AdMob", "Test Interstitial loaded successfully!")
-                                }
-
-                                override fun onAdFailedToLoad(testErr: LoadAdError) {
-                                    isAdLoading = false
-                                    Log.w("AdMob", "Test Interstitial ad failed: ${testErr.message}")
-                                }
-                            }
-                        )
-                    }
-                }
-            )
-        }
-    }
+    val isMiningCycleIdle = !timerState.isMiningActive && !timerState.isReadyToClaim
 
     LaunchedEffect(Unit) {
-        // Pre-load interstitial ad with a short delay to avoid graphics driver contention on startup
-        delay(2500L)
-        loadAdMobAds()
+        // Pre-load interstitial ad immediately so the mining button is enabled as soon as the ad is ready
+        AdManager.preloadAd(context)
     }
 
     val showAdAndExecute: (action: () -> Unit, rewardLabel: String) -> Unit = { targetAction, rewardLabel ->
-        val activity = context.findActivity()
-        val interstitial = loadedInterstitialAd
-
-        if (interstitial != null && activity != null) {
-            interstitial.fullScreenContentCallback = object : FullScreenContentCallback() {
-                override fun onAdDismissedFullScreenContent() {
-                    loadedInterstitialAd = null
-                    loadAdMobAds()
+        val activity = context.findActivity() ?: AdManager.findActivity(context)
+        if (activity != null && isAdReady) {
+            AdManager.showAd(
+                activity = activity,
+                onAdDismissed = {
+                    targetAction.invoke()
+                },
+                onAdFailed = { errMsg ->
+                    Log.w("AdMob", "Ad failed to display: $errMsg")
                     targetAction.invoke()
                 }
-
-                override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                    Log.w("AdMob", "Interstitial failed to show: ${adError.message}")
-                    loadedInterstitialAd = null
-                    loadAdMobAds()
-                    targetAction.invoke()
-                }
-            }
-            interstitial.show(activity)
+            )
         } else {
-            loadAdMobAds()
-            pendingRewardLabel = rewardLabel
-            pendingRewardedAction = targetAction
+            AdManager.preloadAd(context)
+            if (isAdLoading) {
+                Toast.makeText(context, "Ad is loading. Please wait a moment until it's ready!", Toast.LENGTH_SHORT).show()
+            } else {
+                pendingRewardLabel = rewardLabel
+                pendingRewardedAction = targetAction
+            }
         }
     }
 
     val triggerMiningWithAd: () -> Unit = {
         if (!timerState.isMiningActive || timerState.isReadyToClaim) {
-            val targetAction: () -> Unit
-            val rewardLabel: String
             if (timerState.isReadyToClaim) {
-                targetAction = onClaimReward
-                rewardLabel = "Claim Mining Reward (+${config.miningReward} MBTK)"
+                onClaimReward.invoke()
             } else {
-                targetAction = onStartMining
-                rewardLabel = "Watch Full Ad to Start 12h Mining (+${config.miningReward} MBTK)"
+                if (isAdReady) {
+                    showAdAndExecute(onStartMining, "Watch Full Ad to Start 12h Mining (+${config.miningReward} MBTK)")
+                } else {
+                    AdManager.preloadAd(context)
+                    if (isAdLoading) {
+                        Toast.makeText(context, "Ad is loading. Mining button will unlock automatically once loaded!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Connecting to ad network... retrying now.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
-            showAdAndExecute(targetAction, rewardLabel)
-        }
-    }
-
-    val triggerBoostAd: () -> Unit = {
-        if (boostCountToday < 5 && cooldownSecondsRemaining == 0) {
-            showAdAndExecute(
-                {
-                    val newCount = boostCountToday + 1
-                    boostCountToday = newCount
-                    val now = System.currentTimeMillis()
-                    lastBoostTimestamp = now
-                    boostPrefs.edit()
-                        .putString("last_boost_date", todayDateString)
-                        .putInt("boost_count_today", newCount)
-                        .putLong("last_boost_timestamp", now)
-                        .apply()
-                    onRewardedAdBoostClaimed.invoke()
-                },
-                "AdMob Interstitial Mining Boost (+0.05 MBTK)"
-            )
         }
     }
 
@@ -312,12 +245,18 @@ fun HomeMiningScreen(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
+                    val isGlobeClickable = !isBusy && when {
+                        timerState.isReadyToClaim -> true
+                        timerState.isMiningActive -> false
+                        else -> isAdReady
+                    }
+
                     // Center Pioneer Globe Circle
                     Box(
                         modifier = Modifier
                             .size(220.dp)
                             .clip(CircleShape)
-                            .clickable(enabled = !isBusy && !timerState.isMiningActive) {
+                            .clickable(enabled = isGlobeClickable) {
                                 triggerMiningWithAd()
                             }
                             .testTag("mining_primary_action_button"),
@@ -366,9 +305,11 @@ fun HomeMiningScreen(
                                 text = when {
                                     timerState.isReadyToClaim -> "CLAIM +${config.miningReward} MBTK"
                                     timerState.isMiningActive -> timerState.formattedCountdown
-                                    else -> "WATCH AD TO MINE"
+                                    isAdReady -> "AD READY • TAP TO MINE"
+                                    isAdLoading -> "LOADING AD..."
+                                    else -> "WAITING FOR AD..."
                                 },
-                                color = MobitikGold,
+                                color = if (isAdReady || timerState.isReadyToClaim) MobitikGold else Color.White.copy(alpha = 0.85f),
                                 fontFamily = JetBrainsMonoFamily,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 12.sp
@@ -393,24 +334,33 @@ fun HomeMiningScreen(
                             onClick = onNavigateToReferrals
                         )
                         // Mining Bolt Indicator
+                        val isBoltClickable = !isBusy && when {
+                            timerState.isReadyToClaim -> true
+                            timerState.isMiningActive -> false
+                            else -> isAdReady
+                        }
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .clickable(enabled = !isBusy && !timerState.isMiningActive) {
+                                .clickable(enabled = isBoltClickable) {
                                     triggerMiningWithAd()
                                 }
                                 .testTag("mining_bolt_button")
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = if (timerState.isMiningActive) MobitikSuccessGreen else Color.White,
+                                color = when {
+                                    timerState.isMiningActive -> MobitikSuccessGreen
+                                    isAdReady -> Color.White
+                                    else -> Color.White.copy(alpha = 0.45f)
+                                },
                                 modifier = Modifier.size(40.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.Bolt,
                                         contentDescription = "Mine",
-                                        tint = MobitikBlack,
+                                        tint = if (isAdReady || timerState.isMiningActive) MobitikBlack else MobitikCharcoal.copy(alpha = 0.4f),
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
@@ -443,38 +393,126 @@ fun HomeMiningScreen(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 // Pill Action Button below Circle — starts mining on full ad watch
+                val isPillEnabled = !isBusy && when {
+                    timerState.isReadyToClaim -> true
+                    timerState.isMiningActive -> false
+                    else -> isAdReady
+                }
+
                 Button(
                     onClick = {
                         triggerMiningWithAd()
                     },
-                    enabled = !isBusy && (!timerState.isMiningActive || timerState.isReadyToClaim),
+                    enabled = isPillEnabled,
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = MobitikOrange
+                        containerColor = if (isPillEnabled) Color.White else Color.White.copy(alpha = 0.6f),
+                        contentColor = MobitikOrange,
+                        disabledContainerColor = Color.White.copy(alpha = 0.5f),
+                        disabledContentColor = MobitikCharcoal.copy(alpha = 0.5f)
                     ),
                     modifier = Modifier
-                        .height(44.dp)
-                        .padding(horizontal = 24.dp)
+                        .height(46.dp)
+                        .padding(horizontal = 20.dp)
                         .testTag("mining_pill_action_button")
                 ) {
-                    Icon(
-                        imageVector = if (timerState.isMiningActive) Icons.Default.Bolt else Icons.Default.PlayCircleFilled,
-                        contentDescription = null,
-                        tint = if (timerState.isMiningActive) MobitikSuccessGreen else MobitikOrange,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = when {
-                            timerState.isReadyToClaim -> "Claim +${config.miningReward} MBTK"
-                            timerState.isMiningActive -> "Mining Active (${timerState.formattedCountdown})"
-                            else -> "Watch Full Ad to Start Mining"
-                        },
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(horizontal = 6.dp)
-                    )
+                    if (isMiningCycleIdle && !isAdReady) {
+                        if (isAdLoading) {
+                            CircularProgressIndicator(
+                                color = MobitikOrange,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Loading Ad...",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = MobitikCharcoal.copy(alpha = 0.7f)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.HourglassTop,
+                                contentDescription = null,
+                                tint = MobitikCharcoal.copy(alpha = 0.6f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Waiting for Ad...",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                color = MobitikCharcoal.copy(alpha = 0.7f)
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = when {
+                                timerState.isMiningActive -> Icons.Default.Bolt
+                                timerState.isReadyToClaim -> Icons.Default.CheckCircle
+                                isAdReady -> Icons.Default.PlayCircleFilled
+                                else -> Icons.Default.HourglassTop
+                            },
+                            contentDescription = null,
+                            tint = when {
+                                timerState.isMiningActive -> MobitikSuccessGreen
+                                timerState.isReadyToClaim -> MobitikGold
+                                isAdReady -> MobitikOrange
+                                else -> MobitikCharcoal.copy(alpha = 0.6f)
+                            },
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = when {
+                                timerState.isReadyToClaim -> "Claim +${config.miningReward} MBTK"
+                                timerState.isMiningActive -> "Mining Active (${timerState.formattedCountdown})"
+                                isAdReady -> "Watch Ad to Start Mining"
+                                else -> "Waiting for Ad..."
+                            },
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(horizontal = 6.dp)
+                        )
+                    }
+                }
+
+                if (isMiningCycleIdle) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (!isAdReady) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable {
+                                    AdManager.preloadAd(context)
+                                    Toast.makeText(context, "Reloading ad...", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Retry",
+                                tint = Color.White.copy(alpha = 0.9f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isAdLoading) "Ad is loading, please wait • Tap to refresh" else "Ad not ready • Tap here to reload ad",
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                textDecoration = TextDecoration.Underline
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "✓ Ad Loaded • Click above to start 12h mining session",
+                            color = MobitikGold,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(18.dp))
@@ -500,14 +538,89 @@ fun HomeMiningScreen(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Network Diagnostic Status Card
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color.Black.copy(alpha = 0.28f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp)
+                        .clickable {
+                            if (networkDiagnosticReport == null && !isDiagnosticRunning) {
+                                onRunDiagnostic()
+                            }
+                            showDiagnosticDialog = true
+                        }
+                        .testTag("network_diagnostic_card")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Surface(
+                                shape = CircleShape,
+                                color = if (networkDiagnosticReport?.isMiningAllowed == false) MobitikErrorRed.copy(alpha = 0.2f)
+                                else MobitikSuccessGreen.copy(alpha = 0.2f),
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.NetworkCheck,
+                                        contentDescription = null,
+                                        tint = if (networkDiagnosticReport?.isMiningAllowed == false) MobitikErrorRed else MobitikSuccessGreen,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Network & Anti-Cheat Diagnostic",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = if (isDiagnosticRunning) "Auditing TRANSPORT_VPN & proxy..."
+                                    else if (networkDiagnosticReport == null) "Tap to inspect TRANSPORT_VPN & proxy status"
+                                    else if (networkDiagnosticReport.isMiningAllowed) "✓ Clean Direct Connection (${networkDiagnosticReport.latencyMs}ms)"
+                                    else "⛔ VPN/Proxy Detected • Mining Suspended",
+                                    color = if (networkDiagnosticReport?.isMiningAllowed == false) MobitikErrorRed else Color.White.copy(alpha = 0.85f),
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Audit ➔",
+                            color = MobitikGold,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                if (showDiagnosticDialog) {
+                    NetworkDiagnosticDialog(
+                        report = networkDiagnosticReport,
+                        isRunning = isDiagnosticRunning,
+                        onRunDiagnostic = onRunDiagnostic,
+                        onDismiss = { showDiagnosticDialog = false }
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(14.dp))
 
-                MiningBoostCard(
-                    boostCountToday = boostCountToday,
-                    maxDailyBoosts = 5,
-                    cooldownSeconds = cooldownSecondsRemaining,
+                CommunityTasksSection(
+                    tasks = tasks,
+                    completedTaskIds = completedTaskIds,
+                    onClaimTaskReward = onClaimTaskReward,
                     isBusy = isBusy,
-                    onWatchBoostClicked = triggerBoostAd,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -841,30 +954,27 @@ private fun RewardedMiningAdDialog(
 }
 
 @Composable
-private fun MiningBoostCard(
-    boostCountToday: Int,
-    maxDailyBoosts: Int,
-    cooldownSeconds: Int,
+private fun CommunityTasksSection(
+    tasks: List<MobitikTask>,
+    completedTaskIds: Set<String>,
+    onClaimTaskReward: (MobitikTask) -> Unit,
     isBusy: Boolean,
-    onWatchBoostClicked: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isLimitReached = boostCountToday >= maxDailyBoosts
-    val isOnCooldown = cooldownSeconds > 0
-    val isReady = !isLimitReached && !isOnCooldown
+    val context = LocalContext.current
 
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         modifier = modifier
-            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
-            .testTag("mining_boost_ad_card")
+            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(18.dp))
+            .testTag("community_tasks_section")
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Header: Ad Tag + Title + Daily Badge
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -872,132 +982,236 @@ private fun MiningBoostCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        color = MobitikGold,
-                        shape = RoundedCornerShape(4.dp)
+                        shape = CircleShape,
+                        color = MobitikOrange.copy(alpha = 0.15f),
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Assignment,
+                                contentDescription = null,
+                                tint = MobitikOrange,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Community & Social Tasks",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Earn 1.00 MBTK per task",
+                            fontSize = 11.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MobitikGold.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = "${completedTaskIds.size}/${tasks.size} Done",
+                        color = MobitikBlack,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            if (tasks.isEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFF8FAFC),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "No active tasks at the moment. Official tasks added by Admin will appear here.",
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            } else {
+                tasks.forEach { task ->
+                    val isCompleted = completedTaskIds.contains(task.id)
+                    TaskItemCard(
+                        task = task,
+                        isCompleted = isCompleted,
+                        isBusy = isBusy,
+                        onOpenUrl = {
+                            if (task.actionUrl.isNotBlank()) {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(task.actionUrl))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Could not open link: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        onClaim = { onClaimTaskReward(task) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskItemCard(
+    task: MobitikTask,
+    isCompleted: Boolean,
+    isBusy: Boolean,
+    onOpenUrl: () -> Unit,
+    onClaim: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isCompleted) Color(0xFFF8FAFC) else Color(0xFFFAFAFA)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = if (isCompleted) Color(0xFFE2E8F0) else Color(0xFFE2E8F0),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .testTag("task_item_${task.id}")
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    val platformColor = when (task.platform.uppercase()) {
+                        "YOUTUBE" -> Color(0xFFFF0000)
+                        "TIKTOK" -> Color(0xFF000000)
+                        "TELEGRAM" -> Color(0xFF0088CC)
+                        "TWITTER" -> Color(0xFF1DA1F2)
+                        else -> MobitikOrange
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = platformColor.copy(alpha = 0.12f)
                     ) {
                         Text(
-                            text = "Ad",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
+                            text = task.platform.uppercase(),
+                            color = platformColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "MOBITIK Mining Boost",
+                        text = task.title,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = Color(0xFF0F172A)
+                        fontSize = 13.sp,
+                        color = Color(0xFF0F172A),
+                        maxLines = 1
                     )
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(50),
-                    color = when {
-                        isLimitReached -> Color(0xFFF1F5F9)
-                        isOnCooldown -> MobitikOrange.copy(alpha = 0.12f)
-                        else -> MobitikSuccessGreen.copy(alpha = 0.12f)
-                    },
-                    modifier = Modifier.border(
-                        1.dp,
-                        when {
-                            isLimitReached -> Color(0xFFCBD5E1)
-                            isOnCooldown -> MobitikOrange
-                            else -> MobitikSuccessGreen
-                        },
-                        RoundedCornerShape(50)
-                    )
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isCompleted) Color(0xFFDCFCE7) else MobitikGold.copy(alpha = 0.2f)
                 ) {
                     Text(
-                        text = when {
-                            isLimitReached -> "5/5 Max Reached"
-                            isOnCooldown -> "Cooldown ${cooldownSeconds}s"
-                            else -> "$boostCountToday/$maxDailyBoosts Today"
-                        },
-                        color = when {
-                            isLimitReached -> Color(0xFF64748B)
-                            isOnCooldown -> MobitikOrange
-                            else -> MobitikSuccessGreen
-                        },
+                        text = if (isCompleted) "✓ 1 MBTK" else "+1.00 MBTK",
+                        color = if (isCompleted) Color(0xFF15803D) else Color(0xFFB45309),
+                        fontWeight = FontWeight.ExtraBold,
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                     )
                 }
             }
 
-            Text(
-                text = "Watch a sponsored ad to earn an instant +0.05 MBTK mining credit. Daily limit: 5 ads with a 1-minute interval between ads.",
-                fontSize = 12.sp,
-                color = Color(0xFF475569),
-                lineHeight = 16.sp
-            )
-
-            // Progress row for 5 daily ads
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                LinearProgressIndicator(
-                    progress = { (boostCountToday / maxDailyBoosts.toFloat()).coerceIn(0f, 1f) },
-                    color = if (isLimitReached) Color(0xFF94A3B8) else MobitikOrange,
-                    trackColor = Color(0xFFF1F5F9),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = if (isLimitReached) "All 5 ads watched today" else "${maxDailyBoosts - boostCountToday} boost ads remaining today",
-                        fontSize = 11.sp,
-                        color = Color(0xFF64748B)
-                    )
-                    Text(
-                        text = "+0.05 MBTK / ad",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MobitikOrange
-                    )
-                }
-            }
-
-            // Watch Button
-            Button(
-                onClick = onWatchBoostClicked,
-                enabled = isReady && !isBusy,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MobitikOrange,
-                    contentColor = Color.White,
-                    disabledContainerColor = Color(0xFFE2E8F0),
-                    disabledContentColor = Color(0xFF94A3B8)
-                ),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .testTag("watch_mining_boost_button")
-            ) {
-                Icon(
-                    imageVector = when {
-                        isLimitReached -> Icons.Default.CheckCircle
-                        isOnCooldown -> Icons.Default.HourglassTop
-                        else -> Icons.Default.PlayCircleFilled
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+            if (task.description.isNotBlank()) {
                 Text(
-                    text = when {
-                        isLimitReached -> "Daily Limit Reached (5/5) — Reset Tomorrow"
-                        isOnCooldown -> "Next Ad in ${cooldownSeconds}s"
-                        else -> "Watch Ad Boost (+0.05 MBTK)"
-                    },
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
+                    text = task.description,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    color = Color(0xFF64748B)
                 )
+            }
+
+            // Action row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isCompleted) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFDCFCE7)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF16A34A),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Completed (+1 MBTK Claimed)",
+                                color = Color(0xFF15803D),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                } else {
+                    if (task.actionUrl.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = onOpenUrl,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.OpenInNew,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Open Link", fontSize = 11.sp)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+
+                    Button(
+                        onClick = onClaim,
+                        enabled = !isBusy,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MobitikOrange,
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.height(36.dp)
+                    ) {
+                        Text("Claim 1 MBTK", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
     }

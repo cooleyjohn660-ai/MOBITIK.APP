@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,6 +32,10 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
@@ -41,6 +46,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.VpnKeyOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -92,6 +98,7 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.asImageBitmap
 import com.example.data.model.KycSubmission
 import com.example.data.model.UsdtWithdrawal
+import com.example.data.model.MobitikTask
 import com.example.data.model.UserProfile
 import com.example.data.remote.BscWeb3Client
 import com.example.data.repository.MobitikRepository
@@ -840,14 +847,86 @@ private fun SupportContactSubTab(
 
 @Composable
 private fun LegalPrivacySubTab() {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var showFullPolicyDialog by remember { mutableStateOf(false) }
+    var copiedPolicyLink by remember { mutableStateOf(false) }
+
+    val policyUrl = "https://ais-pre-tztmtnzq6k7sob4p7uy4v2-180217373317.asia-southeast1.run.app"
+
     val legalCards = listOf(
-        "Privacy Policy & Data Collection" to "MOBITIK collects your account profile (name, username, Google-verified email), internal wallet address, 12-hour mining session timestamps, referral records, and transaction ledger entries. We use this data exclusively to operate the MOBITIK mining ecosystem, prevent duplicate account abuse, and process authorized swaps and withdrawals.",
-        "Password, PIN & Wallet Security" to "MOBITIK uses Google Identity Services for primary authentication and SHA-256 cryptographic hashing for transaction security PINs. We never store plain-text passwords and never request your external Trust Wallet private keys or 12-word recovery seed phrases.",
-        "Cookie, Session & Retention Policy" to "Authenticated sessions are managed via encrypted Firebase Auth tokens with automatic refresh and instant sign-out revocation. Ledger transactions and security audit logs are retained to preserve balance integrity.",
-        "Terms & Conditions & Risk Disclosure" to "1. One account per human user.\n2. 12-hour mining rewards require manual claim upon completion.\n3. The 1 MBTK = 0.15 USDT swap rate is a configured reference rate; actual swaps require available USDT liquidity in the protocol reserve.\n4. Digital assets carry inherent volatility and regulatory risks; MOBITIK makes no promise of guaranteed financial profit."
+        "1. Privacy Policy & Google Play Compliance" to "MOBITIK complies with the Google Play Developer Program Policies. We collect user account profiles (Google name, email, profile picture, Firebase UID), internal wallet balances (MBTK, USDT), withdrawal destination addresses (BEP-20 / TRC-20), and 12-hour mining timestamps. We never sell your personal information.",
+        "2. Cloud Mining & Battery Integrity" to "Zero On-Device Proof-of-Work: MOBITIK does NOT perform cryptographic mining computations on your Android device hardware. Mining sessions operate entirely on remote cloud server nodes without battery drain or hardware degradation.",
+        "3. Advertising & AdMob Disclosures" to "We integrate Google AdMob to serve opt-in rewarded and interstitial ads to support cloud node maintenance. AdMob may process your Advertising ID (AAID) in accordance with Google's advertising privacy standards.",
+        "4. Password, PIN & Wallet Security" to "MOBITIK uses Google Identity Services for primary authentication and SHA-256 cryptographic hashing for transaction security PINs. We never store plain-text passwords and never request your external Trust Wallet private keys or 12-word recovery seed phrases.",
+        "5. Account & Data Deletion Rights" to "You have the right to request permanent deletion of your account and all associated data at any time via in-app Support Tickets or by emailing cooleyjohn660@gmail.com with subject 'Data Deletion Request'. Deletions are processed within 30 days.",
+        "6. Terms & Conditions & Risk Disclosure" to "1. One account per human user.\n2. 12-hour mining rewards require manual claim upon completion.\n3. Digital assets carry inherent market volatility; MOBITIK makes no promise of guaranteed profit."
     )
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // Official Google Play Privacy Policy Banner Card
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            modifier = Modifier.fillMaxWidth().testTag("official_privacy_policy_card")
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = MobitikOrange, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Google Play Privacy Policy",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Package: com.aistudio.mobitik.xkrpvw",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "A complete, transparent Privacy Policy complying with Google Play Developer Program policies, GDPR, and CCPA is published for this app.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = { showFullPolicyDialog = true },
+                        modifier = Modifier.weight(1f).testTag("read_privacy_policy_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange)
+                    ) {
+                        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Read Policy")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(policyUrl))
+                            copiedPolicyLink = true
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(policyUrl))
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        },
+                        modifier = Modifier.weight(1f).testTag("open_web_policy_button")
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (copiedPolicyLink) "Link Copied!" else "Open Link")
+                    }
+                }
+            }
+        }
+
         legalCards.forEach { (title, content) ->
             Card(
                 shape = RoundedCornerShape(16.dp),
@@ -870,6 +949,63 @@ private fun LegalPrivacySubTab() {
             }
         }
     }
+
+    if (showFullPolicyDialog) {
+        AlertDialog(
+            onDismissRequest = { showFullPolicyDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Security, contentDescription = null, tint = MobitikOrange)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("MOBITIK Privacy Policy")
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Last Updated: October 14, 2026\nPackage: com.aistudio.mobitik.xkrpvw\nContact: cooleyjohn660@gmail.com",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MobitikOrange
+                    )
+                    HorizontalDivider()
+                    Text(
+                        text = "1. Information Collection & Google Sign-In:\nWe collect your Google display name, email, profile photo, and Firebase UID for account authentication and balance ledger tracking.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "2. Financial & Withdrawal Data:\nWhen you request a USDT withdrawal (BEP-20 / TRC-20), we collect your entered public wallet address to broadcast the payout. We NEVER ask for or store your private key or recovery seed phrase.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "3. Cloud Mining (Zero Device Burden):\nAll mining operations are executed on remote cloud servers. No proof-of-work algorithm is run on your phone.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "4. Third-Party Services:\n• Firebase Authentication & Cloud Firestore (Google LLC)\n• Google AdMob (Google LLC) for rewarded boost ads\n• BNB Smart Chain / BscScan for transaction verification",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "5. Account & Data Deletion:\nUsers may request complete deletion of their account and personal data at any time via Support Tickets or by emailing cooleyjohn660@gmail.com.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showFullPolicyDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange)
+                ) {
+                    Text("Close")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -880,13 +1016,17 @@ fun AdminConsoleScreen(
     kycSubmissions: List<KycSubmission> = emptyList(),
     tickets: List<SupportTicket>,
     auditLogs: List<AuditLog>,
+    adminTasks: List<MobitikTask> = emptyList(),
     isBusy: Boolean,
     onBack: () -> Unit,
     onSaveConfig: (AppConfig, String) -> Unit,
     onReviewWithdrawal: (UsdtWithdrawal, String, String, String) -> Unit,
     onToggleUserStatus: (UserProfile, String, String) -> Unit,
     onReplyTicket: (SupportTicket, String, String) -> Unit,
-    onReviewKyc: (KycSubmission, String, String) -> Unit = { _, _, _ -> }
+    onReviewKyc: (KycSubmission, String, String) -> Unit = { _, _, _ -> },
+    onCreateTask: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    onToggleTaskStatus: (MobitikTask, Boolean) -> Unit = { _, _ -> },
+    onDeleteTask: (MobitikTask) -> Unit = {}
 ) {
     BackHandler { onBack() }
 
@@ -904,8 +1044,9 @@ fun AdminConsoleScreen(
     val tabs = listOf(
         "USDT Withdrawals ($pendingWdCount)",
         "KYC Approvals ($pendingKycCount)",
-        "Swap & Fees",
+        "Tasks (${adminTasks.size})",
         "Users (${users.size})",
+        "Swap & Fees",
         "Tickets (${tickets.count { it.status == "OPEN" }})",
         "Audit Logs (${auditLogs.size})"
     )
@@ -1020,18 +1161,25 @@ fun AdminConsoleScreen(
                     isBusy = isBusy,
                     onReviewKyc = onReviewKyc
                 )
-                2 -> AdminProtocolLiquidityTab(config = config, isBusy = isBusy, onSaveConfig = onSaveConfig)
+                2 -> AdminTasksManagementTab(
+                    tasks = adminTasks,
+                    isBusy = isBusy,
+                    onCreateTask = onCreateTask,
+                    onToggleTask = onToggleTaskStatus,
+                    onDeleteTask = onDeleteTask
+                )
                 3 -> AdminUsersManagementTab(
                     users = users,
                     isBusy = isBusy,
                     onToggleUserStatus = onToggleUserStatus
                 )
-                4 -> AdminSupportTicketsTab(
+                4 -> AdminProtocolLiquidityTab(config = config, isBusy = isBusy, onSaveConfig = onSaveConfig)
+                5 -> AdminSupportTicketsTab(
                     tickets = tickets,
                     isBusy = isBusy,
                     onReplyTicket = onReplyTicket
                 )
-                5 -> AdminAuditLogsTab(auditLogs = auditLogs)
+                6 -> AdminAuditLogsTab(auditLogs = auditLogs)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -1781,58 +1929,443 @@ private fun AdminUsersManagementTab(
         if (q.isBlank()) users else users.filter {
             it.username.lowercase().contains(q) ||
                 it.email.lowercase().contains(q) ||
-                it.walletAddress.lowercase().contains(q)
+                it.walletAddress.lowercase().contains(q) ||
+                it.lastIpAddress.lowercase().contains(q)
         }
+    }
+
+    // Identify duplicate IPs for multi-accounting detection
+    val ipAccountsMap = remember(users) {
+        users.filter { it.lastIpAddress.isNotBlank() && it.lastIpAddress != "127.0.0.1" }
+            .groupBy { it.lastIpAddress }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
             value = search,
             onValueChange = { search = it },
-            label = { Text("Search users by username, email, or MBTK address") },
+            label = { Text("Search users by username, email, address, or IP") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
 
         filtered.forEach { u ->
+            val isBannedAccount = u.isBanned || u.accountStatus == "BANNED"
+            val sharedWithOthers = if (u.lastIpAddress.isNotBlank() && u.lastIpAddress != "127.0.0.1") {
+                ipAccountsMap[u.lastIpAddress]?.filter { it.userId != u.userId } ?: emptyList()
+            } else emptyList()
+
             Card(
                 shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier.fillMaxWidth()
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isBannedAccount) Color(0xFFFFF1F2) else MaterialTheme.colorScheme.surface
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = when {
+                            isBannedAccount -> MobitikErrorRed
+                            sharedWithOthers.isNotEmpty() -> MobitikErrorRed.copy(alpha = 0.5f)
+                            else -> Color(0xFFE2E8F0)
+                        },
+                        shape = RoundedCornerShape(14.dp)
+                    )
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("${u.name} (@${u.username})", style = MaterialTheme.typography.titleMedium)
+                            Text("${u.name} (@${u.username})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text(u.email, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         StatusPillBadge(
-                            label = u.accountStatus,
-                            color = if (u.accountStatus == "ACTIVE") MobitikSuccessGreen else MobitikErrorRed
+                            label = if (isBannedAccount) "BANNED" else u.accountStatus,
+                            color = when {
+                                isBannedAccount -> MobitikErrorRed
+                                u.accountStatus == "ACTIVE" -> MobitikSuccessGreen
+                                else -> MobitikWarningAmber
+                            }
                         )
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // User IP Address row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = null,
+                                tint = if (sharedWithOthers.isNotEmpty()) MobitikErrorRed else Color(0xFF64748B),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "IP: ${u.lastIpAddress.ifBlank { "Not Recorded" }}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = if (sharedWithOthers.isNotEmpty()) MobitikErrorRed else Color(0xFF0F172A)
+                            )
+                        }
+
+                        if (u.isVpnDetected) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MobitikErrorRed.copy(alpha = 0.15f)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(Icons.Default.VpnKeyOff, contentDescription = null, tint = MobitikErrorRed, modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("VPN FLAGGED", color = MobitikErrorRed, fontWeight = FontWeight.Black, fontSize = 9.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    // Multi-account warning if IP is shared
+                    if (sharedWithOthers.isNotEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFFEF2F2),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, MobitikErrorRed.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "⚠️ MULTI-ACCOUNT ALERT (${sharedWithOthers.size + 1} Accounts on this IP)",
+                                    color = MobitikErrorRed,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 11.sp
+                                )
+                                Text(
+                                    text = "Other accounts: " + sharedWithOthers.joinToString { "@" + it.username },
+                                    color = Color(0xFF7F1D1D),
+                                    fontSize = 10.sp
+                                )
+                                Button(
+                                    onClick = {
+                                        val allSharing = listOf(u) + sharedWithOthers
+                                        allSharing.forEach { acc ->
+                                            if (!acc.isBanned) {
+                                                onToggleUserStatus(
+                                                    acc,
+                                                    "BANNED",
+                                                    "Multi-Account Ban: Multiple accounts linked to IP ${u.lastIpAddress}"
+                                                )
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MobitikErrorRed),
+                                    shape = RoundedCornerShape(6.dp),
+                                    enabled = !isBusy
+                                ) {
+                                    Icon(Icons.Default.Block, contentDescription = null, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Ban All ${sharedWithOthers.size + 1} Accounts On This IP", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    if (isBannedAccount && u.banReason.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFFEE2E2),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "⛔ Reason: ${u.banReason}",
+                                color = Color(0xFF991B1B),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(6.dp)
+                            )
+                        }
+                    }
+
                     Text(
                         text = "Balance: ${"%.2f".format(u.availableBalance)} MBTK • ${"%.2f".format(u.usdtBalance)} USDT • Sessions: ${u.completedSessions} • Referrals: ${u.totalReferrals}",
                         style = MaterialTheme.typography.labelSmall
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val targetStatus = if (u.accountStatus == "ACTIVE") "SUSPENDED" else "ACTIVE"
-                    OutlinedButton(
-                        onClick = {
-                            onToggleUserStatus(u, targetStatus, "Admin status change to $targetStatus")
-                        },
-                        enabled = !isBusy
+
+                    // Action buttons: Ban Multiple Accounts / Unban
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(if (u.accountStatus == "ACTIVE") "Suspend Account" else "Reactivate Account")
+                        if (isBannedAccount) {
+                            Button(
+                                onClick = {
+                                    onToggleUserStatus(u, "ACTIVE", "Admin account reinstatement")
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MobitikSuccessGreen),
+                                shape = RoundedCornerShape(8.dp),
+                                enabled = !isBusy
+                            ) {
+                                Text("Reactivate / Unban Account", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    onToggleUserStatus(
+                                        u,
+                                        "BANNED",
+                                        "Multi-Account & VPN Abuse Prohibition (IP: ${u.lastIpAddress.ifBlank { "shared network" }})"
+                                    )
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MobitikErrorRed),
+                                shape = RoundedCornerShape(8.dp),
+                                enabled = !isBusy
+                            ) {
+                                Text("Ban Account", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            val targetStatus = if (u.accountStatus == "ACTIVE") "SUSPENDED" else "ACTIVE"
+                            OutlinedButton(
+                                onClick = {
+                                    onToggleUserStatus(u, targetStatus, "Admin status change to $targetStatus")
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                enabled = !isBusy
+                            ) {
+                                Text(if (u.accountStatus == "ACTIVE") "Suspend" else "Activate", fontSize = 11.sp)
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AdminTasksManagementTab(
+    tasks: List<MobitikTask>,
+    isBusy: Boolean,
+    onCreateTask: (title: String, description: String, platform: String, url: String) -> Unit,
+    onToggleTask: (MobitikTask, Boolean) -> Unit,
+    onDeleteTask: (MobitikTask) -> Unit
+) {
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var taskTitle by remember { mutableStateOf("") }
+    var taskDesc by remember { mutableStateOf("") }
+    var taskPlatform by remember { mutableStateOf("YOUTUBE") }
+    var taskUrl by remember { mutableStateOf("") }
+
+    val platformOptions = listOf("YOUTUBE", "TIKTOK", "TELEGRAM", "TWITTER", "WEBSITE", "OTHER")
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Task Rewards System", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                        Text("Fixed Reward: 1.00 MBTK per task", fontSize = 12.sp, color = MobitikOrange, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = { showCreateDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange),
+                        shape = RoundedCornerShape(10.dp),
+                        enabled = !isBusy
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Task", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        if (tasks.isEmpty()) {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(14.dp))
+            ) {
+                Text(
+                    text = "No community tasks created yet. Tap 'Add Task' to publish a new mission.",
+                    color = Color(0xFF64748B),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth()
+                )
+            }
+        } else {
+            tasks.forEach { t ->
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(14.dp))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MobitikOrange.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = t.platform.uppercase(),
+                                        color = MobitikOrange,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(t.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MobitikGold.copy(alpha = 0.15f)
+                            ) {
+                                Text("+1.00 MBTK", color = MobitikBlack, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
+                        }
+
+                        if (t.description.isNotBlank()) {
+                            Text(t.description, fontSize = 12.sp, color = Color(0xFF64748B))
+                        }
+                        if (t.actionUrl.isNotBlank()) {
+                            Text("URL: ${t.actionUrl}", fontSize = 11.sp, color = Color(0xFF0284C7))
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Switch(
+                                    checked = t.isActive,
+                                    onCheckedChange = { onToggleTask(t, it) },
+                                    enabled = !isBusy
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (t.isActive) "Active" else "Inactive", fontSize = 12.sp, color = if (t.isActive) MobitikSuccessGreen else Color(0xFF94A3B8))
+                            }
+
+                            IconButton(
+                                onClick = { onDeleteTask(t) },
+                                enabled = !isBusy
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MobitikErrorRed)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text("Create New Task (1 MBTK)") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = taskTitle,
+                        onValueChange = { taskTitle = it },
+                        label = { Text("Task Title (e.g. Subscribe to YouTube)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text("Platform:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        platformOptions.forEach { plat ->
+                            FilterChip(
+                                selected = taskPlatform == plat,
+                                onClick = { taskPlatform = plat },
+                                label = { Text(plat, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = taskUrl,
+                        onValueChange = { taskUrl = it },
+                        label = { Text("Action URL (e.g. https://youtube.com/...)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = taskDesc,
+                        onValueChange = { taskDesc = it },
+                        label = { Text("Task Instructions / Description") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MobitikGold.copy(alpha = 0.15f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Reward: Fixed at 1.00 MBTK per task for Pioneers.",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = MobitikBlack,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (taskTitle.isNotBlank()) {
+                            onCreateTask(taskTitle, taskDesc, taskPlatform, taskUrl)
+                            showCreateDialog = false
+                            taskTitle = ""
+                            taskDesc = ""
+                            taskUrl = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MobitikOrange)
+                ) {
+                    Text("Publish Task (+1 MBTK)")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

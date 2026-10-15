@@ -68,4 +68,49 @@ class ExampleUnitTest {
         assertTrue(BscWeb3Client.isValidBscTxHash(validHash))
         assertFalse(BscWeb3Client.isValidBscTxHash("0x1234"))
     }
+
+    @Test
+    fun networkDiagnostic_vpnOrProxyDetected_blocksMiningEligibility() {
+        // Case 1: TRANSPORT_VPN active
+        val vpnReport = com.example.data.remote.NetworkDiagnosticReport(
+            isVpnDetected = true,
+            hasTransportVpn = true,
+            isProxyDetected = false,
+            connectionType = "VPN Tunnel",
+            ipAddress = "198.51.100.1",
+            latencyMs = 45L,
+            isMiningAllowed = false,
+            diagnosticSummary = "CRITICAL: TRANSPORT_VPN active"
+        )
+        assertFalse("Mining must be blocked when TRANSPORT_VPN is active", vpnReport.isMiningAllowed)
+        assertTrue(vpnReport.hasTransportVpn)
+
+        // Case 2: Proxy active
+        val proxyReport = com.example.data.remote.NetworkDiagnosticReport(
+            isVpnDetected = false,
+            hasTransportVpn = false,
+            isProxyDetected = true,
+            proxyDetails = "HTTP Proxy: 10.0.0.1:8080",
+            connectionType = "Wi-Fi",
+            ipAddress = "192.0.2.1",
+            latencyMs = 120L,
+            isMiningAllowed = false,
+            diagnosticSummary = "WARNING: Proxy active"
+        )
+        assertFalse("Mining must be blocked when Proxy is active", proxyReport.isMiningAllowed)
+
+        // Case 3: Clean Direct Connection
+        val cleanReport = com.example.data.remote.NetworkDiagnosticReport(
+            isVpnDetected = false,
+            hasTransportVpn = false,
+            isProxyDetected = false,
+            connectionType = "Wi-Fi",
+            ipAddress = "203.0.113.1",
+            latencyMs = 32L,
+            isMiningAllowed = true,
+            diagnosticSummary = "SECURE: Direct connection"
+        )
+        assertTrue("Mining must be authorized when connection is clean", cleanReport.isMiningAllowed)
+    }
 }
+

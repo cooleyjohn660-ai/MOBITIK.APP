@@ -15,6 +15,8 @@ import com.example.data.model.UserProfile
 import com.example.data.model.WalletTransaction
 import com.example.data.model.KycSubmission
 import com.example.data.model.KycFaceIndex
+import com.example.data.model.MobitikTask
+import com.example.data.model.UserTaskCompletion
 import android.util.Log
 import com.example.data.remote.BscWeb3Client
 import com.example.data.remote.OperationType
@@ -260,6 +262,48 @@ class MobitikRepository(
             }
     }
 
+    fun observeActiveTasks(): Flow<List<MobitikTask>> {
+        val path = "tasks"
+        return db.collection(path)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(MobitikTask::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .filter { it.isActive }
+                    .sortedBy { it.sortOrder }
+            }
+            .catch { e ->
+                if (e is Exception) handleFirestoreError(e, OperationType.LIST, path)
+                throw e
+            }
+    }
+
+    fun observeAllTasksForAdmin(): Flow<List<MobitikTask>> {
+        val path = "tasks"
+        return db.collection(path)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(MobitikTask::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .sortedByDescending { it.createdAt?.toDate()?.time ?: it.sortOrder }
+            }
+            .catch { e ->
+                if (e is Exception) handleFirestoreError(e, OperationType.LIST, path)
+                throw e
+            }
+    }
+
+    fun observeCompletedTaskIds(userId: String): Flow<Set<String>> {
+        val path = "task_completions"
+        return db.collection(path)
+            .whereEqualTo("userId", userId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(UserTaskCompletion::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .map { it.taskId }
+                    .toSet()
+            }
+            .catch { emit(emptySet()) }
+    }
+
     // --- Admin Observers ---
 
     fun observeAllUsersForAdmin(): Flow<List<UserProfile>> {
@@ -330,6 +374,7 @@ class MobitikRepository(
         if (faqSnap.isEmpty) {
             seedDefaultFaqs()
         }
+        seedDefaultTasksIfEmpty()
         Result.success(Unit)
     } catch (e: CancellationException) {
         throw e
@@ -413,6 +458,65 @@ class MobitikRepository(
         defaultFaqs.forEachIndexed { idx, faq ->
             val docId = "faq_default_${idx + 1}"
             db.collection("faq_entries").document(docId).set(faq.toCreateMap()).await()
+        }
+    }
+
+    private suspend fun seedDefaultTasksIfEmpty() {
+        try {
+            val tasksSnap = db.collection("tasks").limit(1).get().await()
+            if (tasksSnap.isEmpty) {
+                val defaultTasks = listOf(
+                    MobitikTask(
+                        id = "task_youtube_sub",
+                        title = "Subscribe to MOBITIK YouTube",
+                        description = "Subscribe to our official YouTube channel for updates, mining tutorials, and ecosystem events.",
+                        platform = "YOUTUBE",
+                        actionUrl = "https://youtube.com",
+                        rewardAmount = 1.0,
+                        isActive = true,
+                        sortOrder = 1L,
+                        createdBy = "system"
+                    ),
+                    MobitikTask(
+                        id = "task_tiktok_follow",
+                        title = "Follow Official TikTok",
+                        description = "Follow @MobitikNetwork on TikTok for daily mining tips, clips, and community highlights.",
+                        platform = "TIKTOK",
+                        actionUrl = "https://tiktok.com",
+                        rewardAmount = 1.0,
+                        isActive = true,
+                        sortOrder = 2L,
+                        createdBy = "system"
+                    ),
+                    MobitikTask(
+                        id = "task_telegram_join",
+                        title = "Join Official Telegram",
+                        description = "Join the global Telegram announcement channel for instant token alerts and roadmap drops.",
+                        platform = "TELEGRAM",
+                        actionUrl = "https://t.me/mobitik_network",
+                        rewardAmount = 1.0,
+                        isActive = true,
+                        sortOrder = 3L,
+                        createdBy = "system"
+                    ),
+                    MobitikTask(
+                        id = "task_twitter_follow",
+                        title = "Follow on X (Twitter)",
+                        description = "Follow @MobitikNetwork on X (Twitter) for official core team announcements.",
+                        platform = "TWITTER",
+                        actionUrl = "https://x.com",
+                        rewardAmount = 1.0,
+                        isActive = true,
+                        sortOrder = 4L,
+                        createdBy = "system"
+                    )
+                )
+                defaultTasks.forEach { task ->
+                    db.collection("tasks").document(task.id).set(task.toCreateMap()).await()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("MobitikRepo", "Could not seed default tasks", e)
         }
     }
 
@@ -772,6 +876,81 @@ class MobitikRepository(
             db.collection("transactions").document(txId).set(tx.toCreateMap()).await()
 
             Result.success(boostReward)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, userDocPath)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun claimTaskReward(
+        task: MobitikTask,
+        user: UserProfile
+    ): Result<Double> {
+        val uid = requireUserId()
+        val userDocPath = "users/$uid"
+        val completionDocId = "${uid}_${task.id}"
+        return try {
+            require(user.accountStatus == "ACTIVE") { "Account is suspended. Contact support." }
+            require(task.isActive) { "This task is currently not active." }
+
+            val completionRef = db.collection("task_completions").document(completionDocId)
+            val existing = completionRef.get().await()
+            if (existing.exists()) {
+                throw IllegalStateException("You have already claimed this 1 MBTK task reward!")
+            }
+
+            val reward = 1.0 // 1 MBTK token per task
+            val newTotalBalance = user.totalBalance + reward
+            val newAvailableBalance = user.availableBalance + reward
+            val newTotalMiningRewards = user.totalMiningRewards + reward
+
+            db.collection("users").document(uid).update(
+                mapOf(
+                    "totalBalance" to newTotalBalance,
+                    "availableBalance" to newAvailableBalance,
+                    "totalMiningRewards" to newTotalMiningRewards,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+
+            val completion = UserTaskCompletion(
+                id = completionDocId,
+                userId = uid,
+                taskId = task.id,
+                taskTitle = task.title,
+                rewardAmount = reward,
+                completedAtMs = System.currentTimeMillis()
+            )
+            completionRef.set(completion.toCreateMap()).await()
+
+            val txId = "tx_task_${uid}_${UUID.randomUUID().toString().take(8)}"
+            val tx = WalletTransaction(
+                id = txId,
+                userId = uid,
+                counterpartyUserId = "",
+                type = "MINING_REWARD",
+                senderAddress = "MOBITIK-TASKS-REWARD",
+                recipientAddress = user.walletAddress,
+                amount = reward,
+                fee = 0.0,
+                tokenSymbol = "MOBITIK",
+                note = "Task Reward: ${task.title} (+1.00 MBTK)",
+                status = "COMPLETED",
+                txHash = generateTxHash("TASK"),
+                sessionNumber = user.completedSessions
+            )
+            db.collection("transactions").document(txId).set(tx.toCreateMap()).await()
+
+            createNotification(
+                recipientUid = uid,
+                title = "Task Reward Claimed: +1.00 MBTK",
+                message = "You earned 1.00 MBTK for completing '${task.title}'.",
+                category = "MINING"
+            )
+
+            Result.success(reward)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1796,9 +1975,12 @@ class MobitikRepository(
     ): Result<Unit> {
         val adminUid = requireUserId()
         return try {
+            val isBannedNow = (newStatus == "BANNED")
             db.collection("users").document(targetUser.userId).update(
                 mapOf(
                     "accountStatus" to newStatus,
+                    "isBanned" to isBannedNow,
+                    "banReason" to if (isBannedNow) reason else "",
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
@@ -1815,13 +1997,86 @@ class MobitikRepository(
                 adminEmail = adminEmail,
                 actionType = "USER_STATUS_$newStatus",
                 targetId = targetUser.userId,
-                details = "User @${targetUser.username} set to $newStatus. Reason: $reason"
+                details = "User @${targetUser.username} set to $newStatus (isBanned=$isBannedNow). Reason: $reason"
             )
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.UPDATE, "users/${targetUser.userId}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateUserIpAndVpnStatus(
+        userId: String,
+        ipAddress: String,
+        isVpn: Boolean
+    ): Result<Unit> {
+        return try {
+            val userRef = db.collection("users").document(userId)
+            val snap = userRef.get().await()
+            if (!snap.exists()) return Result.success(Unit)
+
+            val updates = mutableMapOf<String, Any>(
+                "lastIpAddress" to ipAddress,
+                "isVpnDetected" to isVpn,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            val regIp = snap.getString("registrationIpAddress") ?: ""
+            if (regIp.isBlank() && ipAddress.isNotBlank()) {
+                updates["registrationIpAddress"] = ipAddress
+            }
+            if (isVpn) {
+                updates["isBanned"] = true
+                updates["accountStatus"] = "BANNED"
+                updates["banReason"] = "VPN / Proxy access prohibited. Anti-cheat enforcement ($ipAddress)."
+            }
+            userRef.update(updates).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun flagAccountSecurityViolation(
+        userId: String,
+        reason: String,
+        ipAddress: String,
+        isVpn: Boolean
+    ): Result<Unit> {
+        return try {
+            val userRef = db.collection("users").document(userId)
+            val snap = userRef.get().await()
+            if (!snap.exists()) return Result.success(Unit)
+
+            val updates = mutableMapOf<String, Any>(
+                "isVpnDetected" to isVpn,
+                "isBanned" to true,
+                "accountStatus" to "BANNED",
+                "banReason" to reason,
+                "lastIpAddress" to ipAddress,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            userRef.update(updates).await()
+
+            val logData = hashMapOf(
+                "actionType" to "SECURITY_FLAG_VPN_PROXY",
+                "adminEmail" to "anti-cheat-system@mobitik.network",
+                "targetId" to userId,
+                "details" to "Diagnostic Utility Flag: $reason. Account suspended.",
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            try {
+                db.collection("audit_logs").add(logData).await()
+            } catch (_: Exception) {}
+
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }
@@ -1875,6 +2130,85 @@ class MobitikRepository(
             updatedConfig = config.copy(announcementText = announcement.trim()),
             auditSummary = "Published announcement: ${announcement.trim().take(120)}"
         )
+    }
+
+    suspend fun adminSaveTask(
+        taskId: String = "",
+        title: String,
+        description: String,
+        platform: String,
+        actionUrl: String,
+        rewardAmount: Double = 1.0,
+        adminEmail: String = ADMIN_EMAIL
+    ): Result<String> {
+        val uid = requireUserId()
+        return try {
+            val docRef = if (taskId.isNotBlank()) {
+                db.collection("tasks").document(taskId)
+            } else {
+                db.collection("tasks").document()
+            }
+            val finalTask = MobitikTask(
+                id = docRef.id,
+                title = title.trim(),
+                description = description.trim(),
+                platform = platform.uppercase().trim(),
+                actionUrl = actionUrl.trim(),
+                rewardAmount = 1.0, // 1 MBTK token per task
+                isActive = true,
+                sortOrder = System.currentTimeMillis(),
+                createdBy = uid
+            )
+            docRef.set(finalTask.toCreateMap()).await()
+            recordAuditLog(uid, adminEmail, "CREATE_TASK", docRef.id, "Created task '$title' (${platform}) with reward 1.0 MBTK")
+            Result.success(docRef.id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, "tasks/${taskId.ifBlank { "new" }}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun adminToggleTaskStatus(
+        task: MobitikTask,
+        newStatus: Boolean,
+        adminEmail: String = ADMIN_EMAIL
+    ): Result<Unit> {
+        val uid = requireUserId()
+        return try {
+            db.collection("tasks").document(task.id).update(
+                mapOf(
+                    "isActive" to newStatus,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            recordAuditLog(uid, adminEmail, "UPDATE_TASK", task.id, "Set task '${task.title}' active=$newStatus")
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, "tasks/${task.id}")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun adminDeleteTask(
+        taskId: String,
+        taskTitle: String,
+        adminEmail: String = ADMIN_EMAIL
+    ): Result<Unit> {
+        val uid = requireUserId()
+        return try {
+            db.collection("tasks").document(taskId).delete().await()
+            recordAuditLog(uid, adminEmail, "DELETE_TASK", taskId, "Deleted task '$taskTitle'")
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, "tasks/$taskId")
+            Result.failure(e)
+        }
     }
 
     private suspend fun createNotification(

@@ -46,6 +46,9 @@ data class UserProfile(
     val kycRejectionReason: String = "",
     val isBanned: Boolean = false,
     val banReason: String = "",
+    val lastIpAddress: String = "",
+    val registrationIpAddress: String = "",
+    val isVpnDetected: Boolean = false,
     @ServerTimestamp val kycSubmittedAt: Timestamp? = null,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
@@ -88,6 +91,9 @@ data class UserProfile(
         "kycRejectionReason" to kycRejectionReason,
         "isBanned" to isBanned,
         "banReason" to banReason,
+        "lastIpAddress" to lastIpAddress,
+        "registrationIpAddress" to registrationIpAddress,
+        "isVpnDetected" to isVpnDetected,
         "createdAt" to FieldValue.serverTimestamp(),
         "updatedAt" to FieldValue.serverTimestamp()
     )
@@ -468,3 +474,51 @@ data class OnChainWalletBalance(
     val isReachable: Boolean = false,
     val lastCheckedMs: Long = System.currentTimeMillis()
 )
+
+@IgnoreExtraProperties
+data class MobitikTask(
+    @DocumentId val id: String = "",
+    val title: String = "",
+    val description: String = "",
+    val platform: String = "YOUTUBE", // YOUTUBE, TIKTOK, TELEGRAM, TWITTER, WEBSITE, OTHER
+    val actionUrl: String = "",
+    val rewardAmount: Double = 1.0,
+    val isActive: Boolean = true,
+    val sortOrder: Long = 0L,
+    val createdBy: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun toCreateMap(): Map<String, Any> = mapOf(
+        "title" to title,
+        "description" to description,
+        "platform" to platform,
+        "actionUrl" to actionUrl,
+        "rewardAmount" to rewardAmount,
+        "isActive" to isActive,
+        "sortOrder" to sortOrder,
+        "createdBy" to createdBy,
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
+    )
+}
+
+@IgnoreExtraProperties
+data class UserTaskCompletion(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val taskId: String = "",
+    val taskTitle: String = "",
+    val rewardAmount: Double = 1.0,
+    val completedAtMs: Long = System.currentTimeMillis(),
+    @ServerTimestamp val createdAt: Timestamp? = null
+) {
+    fun toCreateMap(): Map<String, Any> = mapOf(
+        "userId" to userId,
+        "taskId" to taskId,
+        "taskTitle" to taskTitle,
+        "rewardAmount" to rewardAmount,
+        "completedAtMs" to completedAtMs,
+        "createdAt" to FieldValue.serverTimestamp()
+    )
+}

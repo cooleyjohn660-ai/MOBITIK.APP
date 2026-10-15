@@ -17,8 +17,14 @@ import com.example.data.model.SupportTicket
 import com.example.data.model.UsdtWithdrawal
 import com.example.data.model.UserProfile
 import com.example.data.model.WalletTransaction
+import com.example.data.model.MobitikTask
+import com.example.data.model.UserTaskCompletion
 import com.example.data.remote.BscWeb3Client
+import com.example.data.remote.VpnDetector
+import com.example.data.remote.NetworkDiagnosticUtility
+import com.example.data.remote.NetworkDiagnosticReport
 import com.example.data.repository.MobitikRepository
+import android.content.Context
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -154,9 +160,24 @@ class MobitikViewModel(
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
+    // Tasks streams (Community & Social Tasks per task 1 MBTK)
+    val activeTasks: StateFlow<List<MobitikTask>> = repository.observeActiveTasks()
+        .catch { e ->
+            Log.w(TAG, "Error observing activeTasks", e)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    val completedTaskIds: StateFlow<Set<String>> = repository.observeCompletedTaskIds(currentUserId)
+        .catch { emit(emptySet()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptySet())
+
     // Admin streams (loaded on demand when user is verified Admin)
     private val _adminUsers = MutableStateFlow<List<UserProfile>>(emptyList())
     val adminUsers: StateFlow<List<UserProfile>> = _adminUsers.asStateFlow()
+
+    private val _adminTasks = MutableStateFlow<List<MobitikTask>>(emptyList())
+    val adminTasks: StateFlow<List<MobitikTask>> = _adminTasks.asStateFlow()
 
     private val _adminWithdrawals = MutableStateFlow<List<UsdtWithdrawal>>(emptyList())
     val adminWithdrawals: StateFlow<List<UsdtWithdrawal>> = _adminWithdrawals.asStateFlow()
@@ -166,6 +187,19 @@ class MobitikViewModel(
 
     private val _adminAuditLogs = MutableStateFlow<List<AuditLog>>(emptyList())
     val adminAuditLogs: StateFlow<List<AuditLog>> = _adminAuditLogs.asStateFlow()
+
+    // VPN & Security states
+    private val _isVpnBlocked = MutableStateFlow(false)
+    val isVpnBlocked: StateFlow<Boolean> = _isVpnBlocked.asStateFlow()
+
+    private val _userIpAddress = MutableStateFlow("127.0.0.1")
+    val userIpAddress: StateFlow<String> = _userIpAddress.asStateFlow()
+
+    private val _networkDiagnosticReport = MutableStateFlow<NetworkDiagnosticReport?>(null)
+    val networkDiagnosticReport: StateFlow<NetworkDiagnosticReport?> = _networkDiagnosticReport.asStateFlow()
+
+    private val _isDiagnosticRunning = MutableStateFlow(false)
+    val isDiagnosticRunning: StateFlow<Boolean> = _isDiagnosticRunning.asStateFlow()
 
     private var adminListenersStarted = false
 
@@ -316,6 +350,26 @@ class MobitikViewModel(
                 .catch { Log.w(TAG, "Admin audit logs stream error", it) }
                 .collect { _adminAuditLogs.value = it }
         }
+        viewModelScope.launch {
+            repository.observeAllTasksForAdmin()
+                .catch { Log.w(TAG, "Admin tasks stream error", it) }
+                .collect { _adminTasks.value = it }
+        }
+    }
+
+    fun checkVpnAndTrackIp(context: Context) {
+        val isVpn = VpnDetector.isVpnActive(context)
+        _isVpnBlocked.value = isVpn
+        viewModelScope.launch {
+            val ip = VpnDetector.resolveUserIpAddress()
+            _userIpAddress.value = ip
+            if (currentUserId.isNotBlank()) {
+                repository.updateUserIpAndVpnStatus(currentUserId, ip, isVpn)
+                if (isVpn) {
+                    _snackbarMessage.value = "VPN / Proxy detected! Access suspended by security policy."
+                }
+            }
+        }
     }
 
     fun clearSnackbar() {
@@ -354,10 +408,70 @@ class MobitikViewModel(
         }
     }
 
-    fun onStartMiningClicked() {
+    fun runNetworkDiagnostic(context: Context) {
+        viewModelScope.launch {
+            _isDiagnosticRunning.value = true
+            val report = NetworkDiagnosticUtility.runDiagnostic(context)
+            _networkDiagnosticReport.value = report
+            _isDiagnosticRunning.value = false
+            _isVpnBlocked.value = report.isVpnDetected
+            _userIpAddress.value = report.ipAddress
+
+            if (currentUserId.isNotBlank()) {
+                if (report.isVpnDetected || report.isProxyDetected) {
+                    val flagReason = if (report.hasTransportVpn) {
+                        "Network Diagnostic: TRANSPORT_VPN detected on ${report.connectionType} (${report.ipAddress})"
+                    } else if (report.isVpnDetected) {
+                        "Network Diagnostic: Virtual tunnel detected (${report.ipAddress})"
+                    } else {
+                        "Network Diagnostic: Proxy detected (${report.proxyDetails ?: "System Proxy"})"
+                    }
+                    repository.flagAccountSecurityViolation(
+                        userId = currentUserId,
+                        reason = flagReason,
+                        ipAddress = report.ipAddress,
+                        isVpn = report.isVpnDetected
+                    )
+                    _snackbarMessage.value = "⛔ Diagnostic Alert: VPN/Proxy usage detected. Account flagged."
+                } else {
+                    repository.updateUserIpAndVpnStatus(currentUserId, report.ipAddress, false)
+                    _snackbarMessage.value = "✅ Diagnostic Clean: Latency ${report.latencyMs}ms. Mining authorized."
+                }
+            }
+        }
+    }
+
+    fun onStartMiningClicked(context: Context? = null) {
         val profile = _userProfile.value ?: return
         viewModelScope.launch {
             _isBusy.value = true
+
+            // Diagnostic Gate: Inspect NetworkCapabilities.TRANSPORT_VPN and Proxy before mining
+            if (context != null) {
+                val diagnostic = NetworkDiagnosticUtility.runDiagnostic(context)
+                _networkDiagnosticReport.value = diagnostic
+                if (diagnostic.isVpnDetected || diagnostic.isProxyDetected) {
+                    _isBusy.value = false
+                    _isVpnBlocked.value = true
+                    val flagReason = "Mining Session Blocked: " + (if (diagnostic.hasTransportVpn) {
+                        "Active VPN detected via NetworkCapabilities.TRANSPORT_VPN"
+                    } else if (diagnostic.isVpnDetected) {
+                        "Virtual VPN network tunnel detected"
+                    } else {
+                        "Proxy usage detected (${diagnostic.proxyDetails ?: "System Proxy"})"
+                    }) + " [IP: ${diagnostic.ipAddress}]"
+
+                    repository.flagAccountSecurityViolation(
+                        userId = profile.userId,
+                        reason = flagReason,
+                        ipAddress = diagnostic.ipAddress,
+                        isVpn = diagnostic.isVpnDetected
+                    )
+                    _snackbarMessage.value = "⛔ Mining Blocked: VPN/Proxy usage detected ($flagReason). Turn off VPN to mine."
+                    return@launch
+                }
+            }
+
             val result = repository.startMiningSession(profile, appConfig.value)
             _isBusy.value = false
             result.onSuccess { session ->
@@ -368,11 +482,36 @@ class MobitikViewModel(
         }
     }
 
-    fun onClaimMiningRewardClicked() {
+    fun onClaimMiningRewardClicked(context: Context? = null) {
         val profile = _userProfile.value ?: return
         val activeSession = _miningTimerState.value.activeSession ?: return
         viewModelScope.launch {
             _isBusy.value = true
+
+            // Diagnostic Gate: Inspect NetworkCapabilities.TRANSPORT_VPN and Proxy before claim
+            if (context != null) {
+                val diagnostic = NetworkDiagnosticUtility.runDiagnostic(context)
+                _networkDiagnosticReport.value = diagnostic
+                if (diagnostic.isVpnDetected || diagnostic.isProxyDetected) {
+                    _isBusy.value = false
+                    _isVpnBlocked.value = true
+                    val flagReason = "Reward Claim Blocked: " + (if (diagnostic.hasTransportVpn) {
+                        "Active VPN detected via NetworkCapabilities.TRANSPORT_VPN"
+                    } else {
+                        "Proxy or virtual tunnel detected"
+                    }) + " [IP: ${diagnostic.ipAddress}]"
+
+                    repository.flagAccountSecurityViolation(
+                        userId = profile.userId,
+                        reason = flagReason,
+                        ipAddress = diagnostic.ipAddress,
+                        isVpn = diagnostic.isVpnDetected
+                    )
+                    _snackbarMessage.value = "⛔ Claim Blocked: VPN/Proxy detected. Account flagged for security review."
+                    return@launch
+                }
+            }
+
             val result = repository.claimMiningSessionReward(profile, activeSession, appConfig.value)
             _isBusy.value = false
             result.onSuccess { reward ->
@@ -731,6 +870,78 @@ class MobitikViewModel(
                 _snackbarMessage.value = "KYC for @" + submission.username + " set to " + newStatus + "."
             }.onFailure { err ->
                 _snackbarMessage.value = err.localizedMessage ?: "Failed to update KYC."
+            }
+        }
+    }
+
+    fun onClaimTaskReward(task: MobitikTask) {
+        val profile = _userProfile.value ?: return
+        viewModelScope.launch {
+            _isBusy.value = true
+            val result = repository.claimTaskReward(task, profile)
+            _isBusy.value = false
+            result.onSuccess { reward ->
+                _snackbarMessage.value = "Task completed! +${"%.2f".format(reward)} MBTK credited!"
+            }.onFailure { err ->
+                _snackbarMessage.value = err.localizedMessage ?: "Failed to claim task reward."
+            }
+        }
+    }
+
+    fun onAdminCreateTask(
+        title: String,
+        description: String,
+        platform: String,
+        url: String,
+        onDone: ((Boolean, String) -> Unit)? = null
+    ) {
+        if (!isAdminUser) return
+        viewModelScope.launch {
+            _isBusy.value = true
+            val result = repository.adminSaveTask(
+                taskId = "",
+                title = title,
+                description = description,
+                platform = platform,
+                actionUrl = url,
+                rewardAmount = 1.0, // Fixed 1 MBTK token per task
+                adminEmail = currentUserEmail
+            )
+            _isBusy.value = false
+            result.onSuccess {
+                _snackbarMessage.value = "New task published! (+1.00 MBTK reward)"
+                onDone?.invoke(true, "Task published successfully.")
+            }.onFailure { err ->
+                _snackbarMessage.value = err.localizedMessage ?: "Failed to publish task."
+                onDone?.invoke(false, err.localizedMessage ?: "Failed to publish task.")
+            }
+        }
+    }
+
+    fun onAdminToggleTask(task: MobitikTask, newStatus: Boolean) {
+        if (!isAdminUser) return
+        viewModelScope.launch {
+            _isBusy.value = true
+            val result = repository.adminToggleTaskStatus(task, newStatus, currentUserEmail)
+            _isBusy.value = false
+            result.onSuccess {
+                _snackbarMessage.value = "Task '${task.title}' is now ${if (newStatus) "Active" else "Inactive"}."
+            }.onFailure { err ->
+                _snackbarMessage.value = err.localizedMessage ?: "Failed to update task status."
+            }
+        }
+    }
+
+    fun onAdminDeleteTask(task: MobitikTask) {
+        if (!isAdminUser) return
+        viewModelScope.launch {
+            _isBusy.value = true
+            val result = repository.adminDeleteTask(task.id, task.title, currentUserEmail)
+            _isBusy.value = false
+            result.onSuccess {
+                _snackbarMessage.value = "Task '${task.title}' deleted."
+            }.onFailure { err ->
+                _snackbarMessage.value = err.localizedMessage ?: "Failed to delete task."
             }
         }
     }

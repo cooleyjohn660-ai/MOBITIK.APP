@@ -57,6 +57,7 @@ service cloud.firestore {
                'accountStatus', 'role', 'notificationsEnabled', 'themeMode', 'language',
                'kycStatus', 'kycFullName', 'kycDocumentType', 'kycDocumentNumber',
                'kycFaceHash', 'kycRejectionReason', 'isBanned', 'banReason', 'kycSubmittedAt',
+               'lastIpAddress', 'registrationIpAddress', 'isVpnDetected',
                'createdAt', 'updatedAt'
              ]) &&
              data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
@@ -97,6 +98,9 @@ service cloud.firestore {
              (!('isBanned' in data) || data.isBanned is bool) &&
              (!('banReason' in data) || (data.banReason is string && data.banReason.size() <= 500)) &&
              (!('kycSubmittedAt' in data) || data.kycSubmittedAt == null || data.kycSubmittedAt is timestamp) &&
+             (!('lastIpAddress' in data) || (data.lastIpAddress is string && data.lastIpAddress.size() <= 80)) &&
+             (!('registrationIpAddress' in data) || (data.registrationIpAddress is string && data.registrationIpAddress.size() <= 80)) &&
+             (!('isVpnDetected' in data) || data.isVpnDetected is bool) &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -349,6 +353,42 @@ service cloud.firestore {
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
+    function isValidTask(data) {
+      return data.keys().hasAll([
+               'title', 'description', 'platform', 'actionUrl', 'rewardAmount',
+               'isActive', 'sortOrder', 'createdBy', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'title', 'description', 'platform', 'actionUrl', 'rewardAmount',
+               'isActive', 'sortOrder', 'createdBy', 'createdAt', 'updatedAt'
+             ]) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 150 &&
+             data.description is string && data.description.size() <= 600 &&
+             data.platform is string && data.platform.size() <= 40 &&
+             data.actionUrl is string && data.actionUrl.size() <= 500 &&
+             data.rewardAmount is number && data.rewardAmount > 0 &&
+             data.isActive is bool &&
+             data.sortOrder is int &&
+             data.createdBy is string && data.createdBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTaskCompletion(data) {
+      return data.keys().hasAll([
+               'userId', 'taskId', 'taskTitle', 'rewardAmount', 'completedAtMs', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'taskId', 'taskTitle', 'rewardAmount', 'completedAtMs', 'createdAt'
+             ]) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.taskId is string && data.taskId.size() >= 1 && data.taskId.size() <= 128 &&
+             data.taskTitle is string && data.taskTitle.size() <= 150 &&
+             data.rewardAmount is number && data.rewardAmount > 0 &&
+             data.completedAtMs is int && data.completedAtMs > 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
     // 4. Collection Rules
 
     match /admins/{adminId} {
@@ -385,7 +425,8 @@ service cloud.firestore {
                             'totalMiningRewards', 'completedSessions', 'totalReferrals',
                             'activeReferrals', 'referralRewards', 'autoStartMining',
                             'twoFactorEnabled', 'pinHash', 'notificationsEnabled',
-                            'themeMode', 'language', 'kycStatus', 'kycFullName', 'kycDocumentType', 'kycDocumentNumber', 'kycFaceHash', 'kycRejectionReason', 'isBanned', 'banReason', 'kycSubmittedAt', 'updatedAt'
+                            'themeMode', 'language', 'kycStatus', 'kycFullName', 'kycDocumentType', 'kycDocumentNumber', 'kycFaceHash', 'kycRejectionReason', 'isBanned', 'banReason', 'kycSubmittedAt',
+                            'lastIpAddress', 'registrationIpAddress', 'isVpnDetected', 'updatedAt'
                           ])) ||
                          (incoming().diff(existing()).affectedKeys().hasOnly(['totalBalance', 'availableBalance', 'updatedAt']) &&
                           incoming().totalBalance > existing().totalBalance &&
@@ -636,6 +677,36 @@ service cloud.firestore {
                        isValidId(logId) &&
                        incoming().adminUid == request.auth.uid &&
                        isValidAuditLog(incoming());
+
+      allow update, delete: if false;
+    }
+
+    match /tasks/{taskId} {
+      allow get: if isSignedIn() && isValidId(taskId) && (existing().isActive == true || isAdmin());
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(taskId) &&
+                       isValidTask(incoming()) &&
+                       isAdmin();
+
+      allow update: if isSignedIn() &&
+                       isValidId(taskId) &&
+                       isValidTask(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       isAdmin();
+
+      allow delete: if isSignedIn() && isValidId(taskId) && isAdmin();
+    }
+
+    match /task_completions/{completionId} {
+      allow get: if isSignedIn() && isValidId(completionId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource == null || existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(completionId) &&
+                       isValidTaskCompletion(incoming()) &&
+                       incoming().userId == request.auth.uid;
 
       allow update, delete: if false;
     }

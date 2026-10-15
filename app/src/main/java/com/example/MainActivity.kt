@@ -111,6 +111,8 @@ import com.example.ui.auth.signOutMobitik
 import com.example.ui.components.NotificationsBottomSheet
 import com.example.ui.components.TermsOfServiceDialog
 import com.example.ui.screens.BannedAccountScreen
+import com.example.ui.screens.VpnBlockerScreen
+import com.example.data.remote.VpnDetector
 import com.example.ui.screens.AdminConsoleScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.HomeMiningScreen
@@ -124,6 +126,7 @@ import com.example.ui.theme.MobitikOrange
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MobitikViewModel
 import com.example.ui.viewmodel.ProfileGateState
+import com.example.data.remote.AdManager
 import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.MobileAds
@@ -164,20 +167,21 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val config = RequestConfiguration.Builder()
-                    .setTestDeviceIds(listOf(AdRequest.DEVICE_ID_EMULATOR))
-                    .build()
-                MobileAds.setRequestConfiguration(config)
 
-                MobileAds.initialize(this@MainActivity) { status ->
-                    android.util.Log.d("AdMob", "MobileAds initialized in background: $status")
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("AdMob", "MobileAds init exception: ${e.message}")
+        try {
+            val config = RequestConfiguration.Builder()
+                .setTestDeviceIds(listOf(AdRequest.DEVICE_ID_EMULATOR))
+                .build()
+            MobileAds.setRequestConfiguration(config)
+
+            MobileAds.initialize(this) { status ->
+                android.util.Log.d("AdMob", "MobileAds initialized on UI thread: $status")
+                AdManager.preloadAd(applicationContext)
             }
+        } catch (e: Exception) {
+            android.util.Log.w("AdMob", "MobileAds init exception: ${e.message}")
         }
+
         setContent {
             MobitikRootApp()
         }
@@ -201,6 +205,30 @@ fun MobitikRootApp() {
     var currentUser by remember { mutableStateOf<FirebaseUser?>(auth.currentUser) }
     var sessionEmail by rememberSaveable { mutableStateOf<String?>(null) }
     var sessionDisplayName by rememberSaveable { mutableStateOf<String?>(null) }
+
+    var isVpnDetected by remember { mutableStateOf(VpnDetector.isVpnActive(context)) }
+    var currentIpAddress by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        currentIpAddress = VpnDetector.resolveUserIpAddress()
+        isVpnDetected = VpnDetector.isVpnActive(context)
+    }
+
+    if (isVpnDetected) {
+        MyApplicationTheme(themeMode = "DARK") {
+            VpnBlockerScreen(
+                detectedIp = currentIpAddress.ifBlank { "Checking IP..." },
+                onRetry = {
+                    isVpnDetected = VpnDetector.isVpnActive(context)
+                },
+                onSignOut = {
+                    currentUser = null
+                    sessionEmail = null
+                }
+            )
+        }
+        return
+    }
 
     DisposableEffect(auth) {
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
@@ -325,12 +353,20 @@ fun MobitikAuthenticatedScaffold(
     val onChainBalance by viewModel.onChainBalance.collectAsStateWithLifecycle()
     val isBusy by viewModel.isBusy.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
+    val isVpnBlocked by viewModel.isVpnBlocked.collectAsStateWithLifecycle()
+    val userIpAddress by viewModel.userIpAddress.collectAsStateWithLifecycle()
+    val scaffoldContext = LocalContext.current
 
     val adminUsers by viewModel.adminUsers.collectAsStateWithLifecycle()
     val adminWithdrawals by viewModel.adminWithdrawals.collectAsStateWithLifecycle()
     val adminTickets by viewModel.adminTickets.collectAsStateWithLifecycle()
     val adminAuditLogs by viewModel.adminAuditLogs.collectAsStateWithLifecycle()
     val adminKycSubmissions by viewModel.kycSubmissions.collectAsStateWithLifecycle()
+    val adminTasks by viewModel.adminTasks.collectAsStateWithLifecycle()
+    val activeTasks by viewModel.activeTasks.collectAsStateWithLifecycle()
+    val completedTaskIds by viewModel.completedTaskIds.collectAsStateWithLifecycle()
+    val networkDiagnosticReport by viewModel.networkDiagnosticReport.collectAsStateWithLifecycle()
+    val isDiagnosticRunning by viewModel.isDiagnosticRunning.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -353,6 +389,10 @@ fun MobitikAuthenticatedScaffold(
             viewModel.startAdminObservers()
             showAdminConsole = true
         }
+    }
+
+    LaunchedEffect(viewModel.currentUserId) {
+        viewModel.checkVpnAndTrackIp(scaffoldContext)
     }
 
     LaunchedEffect(snackbarMessage) {
@@ -386,6 +426,14 @@ fun MobitikAuthenticatedScaffold(
         }
 
         is ProfileGateState.NeedsOnboarding -> {
+            if (isVpnBlocked) {
+                VpnBlockerScreen(
+                    detectedIp = userIpAddress.ifBlank { "Checking..." },
+                    onRetry = { viewModel.checkVpnAndTrackIp(scaffoldContext) },
+                    onSignOut = onSignOut
+                )
+                return
+            }
             Scaffold(
                 contentWindowInsets = WindowInsets.safeDrawing,
                 snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -428,6 +476,15 @@ fun MobitikAuthenticatedScaffold(
 
         is ProfileGateState.Ready -> {
             val activeProfile = userProfile ?: gate.profile
+
+            if (isVpnBlocked) {
+                VpnBlockerScreen(
+                    detectedIp = userIpAddress.ifBlank { activeProfile.lastIpAddress },
+                    onRetry = { viewModel.checkVpnAndTrackIp(scaffoldContext) },
+                    onSignOut = onSignOut
+                )
+                return
+            }
 
             if (activeProfile.isBanned || activeProfile.accountStatus == "BANNED") {
                 BannedAccountScreen(
@@ -780,6 +837,16 @@ fun MobitikAuthenticatedScaffold(
                                         },
                                         onReviewKyc = { sub, status, reason ->
                                             viewModel.onAdminReviewKyc(sub, status, reason)
+                                        },
+                                        adminTasks = adminTasks,
+                                        onCreateTask = { t, d, p, u ->
+                                            viewModel.onAdminCreateTask(t, d, p, u)
+                                        },
+                                        onToggleTaskStatus = { t, s ->
+                                            viewModel.onAdminToggleTask(t, s)
+                                        },
+                                        onDeleteTask = { t ->
+                                            viewModel.onAdminDeleteTask(t)
                                         }
                                     )
                                 } else {
@@ -792,8 +859,8 @@ fun MobitikAuthenticatedScaffold(
                                             recentTransactions = transactions,
                                             unreadNotificationCount = unreadCount,
                                             isBusy = isBusy,
-                                            onStartMining = { viewModel.onStartMiningClicked() },
-                                            onClaimReward = { viewModel.onClaimMiningRewardClicked() },
+                                            onStartMining = { viewModel.onStartMiningClicked(scaffoldContext) },
+                                            onClaimReward = { viewModel.onClaimMiningRewardClicked(scaffoldContext) },
                                             onOpenNotifications = { showNotificationsSheet = true },
                                             onNavigateToWalletTab = { subTab ->
                                                 walletInitialTab = subTab
@@ -814,7 +881,13 @@ fun MobitikAuthenticatedScaffold(
                                             },
                                             onRewardedAdBoostClaimed = {
                                                 viewModel.onRewardedAdBoostClaimed()
-                                            }
+                                            },
+                                            tasks = activeTasks,
+                                            completedTaskIds = completedTaskIds,
+                                            onClaimTaskReward = { viewModel.onClaimTaskReward(it) },
+                                            networkDiagnosticReport = networkDiagnosticReport,
+                                            isDiagnosticRunning = isDiagnosticRunning,
+                                            onRunDiagnostic = { viewModel.runNetworkDiagnostic(scaffoldContext) }
                                         )
 
                                         MobitikNavDestination.WALLET -> WalletSwapWithdrawScreen(
